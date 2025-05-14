@@ -7,6 +7,7 @@ mod logging;
 
 use clap::{Parser, Subcommand};
 use log::info;
+use chrono::{TimeZone, Utc};
 
 /// CLI command structure
 #[derive(Parser)]
@@ -55,10 +56,18 @@ async fn main() -> anyhow::Result<()> {
             info!("Searching for: {}", query);
             let results = aur.search_packages(&query).await?;
             for pkg in results {
-                println!("{} - {}", pkg.name, pkg.version);
+                println!("Name: {}", pkg.name);
+                println!("Version: {}", pkg.version);
                 if let Some(desc) = pkg.description {
-                    println!("  {}", desc);
+                    println!("Description: {}", desc);
                 }
+                if let Some(url) = pkg.url {
+                    println!("URL: {}", url);
+                }
+                if let Some(maintainer) = pkg.maintainer {
+                    println!("Maintainer: {}", maintainer);
+                }
+                println!("--------------------"); // Separator for clarity
             }
         }
         Commands::Install { package } => {
@@ -93,6 +102,15 @@ async fn main() -> anyhow::Result<()> {
             if let Some(url) = pkg_info.url {
                 println!("URL: {}", url);
             }
+            if let Some(maintainer) = pkg_info.maintainer {
+                println!("Maintainer: {}", maintainer);
+            }
+            println!("Votes: {}", pkg_info.num_votes);
+            println!("Popularity: {}", pkg_info.popularity);
+            let first_submitted_dt = Utc.timestamp_opt(pkg_info.first_submitted as i64, 0).unwrap();
+            let last_modified_dt = Utc.timestamp_opt(pkg_info.last_modified as i64, 0).unwrap();
+            println!("First Submitted: {}", first_submitted_dt.format("%Y-%m-%d %H:%M:%S UTC"));
+            println!("Last Modified: {}", last_modified_dt.format("%Y-%m-%d %H:%M:%S UTC"));
         }
     }
 

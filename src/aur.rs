@@ -16,6 +16,16 @@ pub struct AurPackage {
     pub description: Option<String>,
     #[serde(rename = "URL")]
     pub url: Option<String>,
+    #[serde(rename = "Maintainer")]
+    pub maintainer: Option<String>,
+    #[serde(rename = "NumVotes")]
+    pub num_votes: u32,
+    #[serde(rename = "Popularity")]
+    pub popularity: f32,
+    #[serde(rename = "FirstSubmitted")]
+    pub first_submitted: u64,
+    #[serde(rename = "LastModified")]
+    pub last_modified: u64,
 }
 
 #[derive(Debug, Deserialize)]
