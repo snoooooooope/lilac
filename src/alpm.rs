@@ -1,7 +1,8 @@
 use crate::error::{AlpmError, AlpmError::*};
 use alpm::Alpm;
-use log::info;
+use std::process::Command;
 use std::path::Path;
+use log::info;
 
 /// Handles ALPM (pacman) operations
 pub struct AlpmWrapper {
@@ -25,29 +26,23 @@ impl AlpmWrapper {
         }
     }
 
-    /// Installs a built package file
+    /// Installs a package from a file.
+    /// This will require sudo privileges.
     pub fn install_package(&self, package_path: &Path) -> Result<(), AlpmError> {
-        info!("Installing package from: {:?}", package_path);
-        
-        let package_path_str = package_path
-            .to_str()
-            .ok_or_else(|| InstallError("Invalid package path".into()))?;
+        info!("Installing package from file: {:?}", package_path);
 
-        let status = std::process::Command::new("sudo")
+        let status = Command::new("sudo")
             .arg("pacman")
             .arg("-U")
-            .arg("--noconfirm")
-            .arg(package_path_str)
+            .arg(package_path)
             .status()
-            .map_err(|e| InstallError(format!("Failed to execute pacman: {}", e)))?;
+            .map_err(|e| AlpmError::InitError(format!("Failed to execute pacman: {}", e)))?;
 
         if !status.success() {
-            return Err(InstallError(format!(
-                "Package installation failed with exit code: {}",
-                status
-            )));
+            return Err(AlpmError::InitError(format!("pacman failed with exit code: {}", status)));
         }
 
+        info!("Package installed successfully.");
         Ok(())
     }
 }

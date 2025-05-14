@@ -1,8 +1,9 @@
 use crate::error::{BuildError, BuildError::*};
 use git2::Repository;
 use log::info;
-use std::process::Command;
-use std::path::Path;
+use std::process::{Command, Output};
+use std::path::{Path, PathBuf};
+use std::str;
 
 /// Handles package building operations
 pub struct PackageBuilder;
@@ -20,36 +21,36 @@ impl PackageBuilder {
     }
 
     /// Executes makepkg in the specified directory
-    pub fn execute_makepkg(build_dir: &Path) -> Result<(), BuildError> {
+    /// Returns the path to the built package file.
+    pub fn execute_makepkg(build_dir: &Path) -> Result<PathBuf, BuildError> {
         info!("Building package in: {:?}", build_dir);
 
-        let status = Command::new("makepkg")
+        let output = Command::new("makepkg")
             .current_dir(build_dir)
-            .args(["-si", "--noconfirm"])
-            .status()
+            .args(["--noconfirm"])
+            .output()
             .map_err(|e| MakePkgError(format!("makepkg execution failed: {}", e)))?;
 
-        if !status.success() {
-            return Err(MakePkgError(format!("makepkg failed with exit code: {}", status)));
+        if !output.status.success() {
+            let stderr = str::from_utf8(&output.stderr).unwrap_or("<invalid UTF-8>");
+            return Err(MakePkgError(format!("makepkg failed with exit code: {}\nStderr: {}", output.status, stderr)));
         }
 
-        Ok(())
-    }
+        // Attempt to parse the package filename from stdout
+        let stdout = str::from_utf8(&output.stdout).unwrap_or("");
+        let package_filename = stdout.lines()
+            .rev()
+            .find_map(|line|
+                line.trim().strip_prefix("==> Created package: ")
+            );
 
-    /// Cleans up build artifacts
-    pub fn clean_build_artifacts(build_dir: &Path) -> Result<(), BuildError> {
-        info!("Cleaning build artifacts in: {:?}", build_dir);
-        
-        let status = Command::new("makepkg")
-            .current_dir(build_dir)
-            .arg("--clean")
-            .status()
-            .map_err(|e| CleanupError(format!("Clean failed: {}", e)))?;
-
-        if !status.success() {
-            return Err(CleanupError("Failed to clean build artifacts".into()));
+        match package_filename {
+            Some(filename) => {
+                let package_path = build_dir.join(filename);
+                info!("Built package file: {:?}", package_path);
+                Ok(package_path)
+            }
+            None => Err(MakePkgError("Failed to find package filename in makepkg output".to_string())),
         }
-
-        Ok(())
     }
 }

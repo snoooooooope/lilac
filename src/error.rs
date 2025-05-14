@@ -14,14 +14,12 @@ pub enum AurError {
 pub enum BuildError {
     GitError(String),
     MakePkgError(String),
-    CleanupError(String),
 }
 
 /// Custom error types for the ALPM module
 #[derive(Debug)]
 pub enum AlpmError {
     InitError(String),
-    InstallError(String),
 }
 
 // Implement Display for our error types
@@ -41,7 +39,6 @@ impl fmt::Display for BuildError {
         match self {
             BuildError::GitError(e) => write!(f, "Git operation failed: {}", e),
             BuildError::MakePkgError(e) => write!(f, "makepkg failed: {}", e),
-            BuildError::CleanupError(e) => write!(f, "Build cleanup failed: {}", e),
         }
     }
 }
@@ -50,7 +47,6 @@ impl fmt::Display for AlpmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AlpmError::InitError(e) => write!(f, "ALPM initialization failed: {}", e),
-            AlpmError::InstallError(e) => write!(f, "Package installation failed: {}", e),
         }
     }
 }

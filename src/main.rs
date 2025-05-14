@@ -8,7 +8,7 @@ mod logging;
 use clap::{Parser, Subcommand};
 use log::info;
 use chrono::{TimeZone, Utc};
-use glob::glob;
+use anyhow::Context;
 
 /// CLI command structure
 #[derive(Parser)]
@@ -72,8 +72,8 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Commands::Install { package } => {
-            info!("Installing package: {}", package);
-            
+            info!("Attempting to install package: {}", package);
+
             // Check if already installed
             match alpm.is_package_installed(&package) {
                 Ok(true) => {
@@ -82,33 +82,37 @@ async fn main() -> anyhow::Result<()> {
                 }
                 Ok(false) => {
                     info!("Package {} is not installed, proceeding with AUR installation", package);
-                    // Continue with the AUR fetch, clone, build, install process
                 }
                 Err(e) => {
                     // A genuine error occurred while querying the local database
-                    return Err(anyhow::anyhow!(e)); // Wrap the AlpmError in anyhow::Error
+                    return Err(anyhow::anyhow!(e).context("Failed to check if package is installed"));
                 }
             }
 
             // Get package info from AUR
-            let pkg_info = aur.get_package_info(&package).await?;
-            println!("Installing {} version {}", pkg_info.name, pkg_info.version);
+            let pkg_info = aur.get_package_info(&package).await
+                .context(format!("Failed to get package info for {}", package))?;
 
-            // Build and install
+            println!("Building and installing {} version {}", pkg_info.name, pkg_info.version);
+
+            // Clone repository
             let build_dir = config.temp_path().join(&package);
-            build::PackageBuilder::clone_repo(&package, &build_dir)?;
-            build::PackageBuilder::execute_makepkg(&build_dir)?;
+            build::PackageBuilder::clone_repo(&package, &build_dir)
+                .context(format!("Failed to clone repository for {}", package))?;
+            info!("Cloned repository to {:?}", build_dir);
 
-            // Find the built package file (assuming it's in the build_dir and matches the pattern)
-            let built_package_glob = build_dir.join(format!("{}-*.pkg.tar.zst", package));
-            let built_package_path = glob(built_package_glob.to_str().expect("Invalid glob pattern"))?
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("Could not find built package file"))??; // Use anyhow for error handling
+            // Execute makepkg to build the package
+            let package_path = build::PackageBuilder::execute_makepkg(&build_dir)
+                .context(format!("Failed to build package {}", package))?;
+            info!("Built package file at {:?}", package_path);
 
-            alpm.install_package(&built_package_path)?;
-            build::PackageBuilder::clean_build_artifacts(&build_dir)?;
+            // Install the package using alpm
+            alpm.install_package(&package_path)
+                .context(format!("Failed to install package {}", package))?;
 
             println!("Successfully installed {}", package);
+
+            // Temporary directory cleanup is handled by the config object dropping
         }
         Commands::Info { package } => {
             let pkg_info = aur.get_package_info(&package).await?;
