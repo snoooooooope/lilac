@@ -1,0 +1,89 @@
+use crate::error::{AurError, aur_request_failed, aur_parse_error, aur_api_error, aur_not_found};
+use reqwest::Client;
+use serde::Deserialize;
+use log::info;
+use std::time::Duration;
+use serde_json;
+
+/// AUR API response structures
+#[derive(Debug, Deserialize)]
+pub struct AurPackage {
+    #[serde(rename = "Name")]
+    pub name: String,
+    #[serde(rename = "Version")]
+    pub version: String,
+    #[serde(rename = "Description")]
+    pub description: Option<String>,
+    #[serde(rename = "URL")]
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AurResponse {
+    results: Vec<AurPackage>,
+}
+
+/// AUR API client
+pub struct AurClient {
+    base_url: String,
+    client: Client,
+}
+
+impl AurClient {
+    /// Creates a new AUR client with the given base URL
+    pub fn new(base_url: String) -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .expect("Failed to create HTTP client");
+            
+        AurClient { base_url, client }
+    }
+
+    /// Searches for packages in the AUR
+    pub async fn search_packages(&self, query: &str) -> Result<Vec<AurPackage>, AurError> {
+        let url = format!("{}/rpc/?v=5&type=search&arg={}", self.base_url, query);
+        info!("Searching AUR for: {}", query);
+
+        let response = self.client.get(&url)
+            .send()
+            .await
+            .map_err(|e| aur_request_failed(e.to_string()))?;
+
+        if !response.status().is_success() {
+            return Err(aur_api_error(format!("Status: {}", response.status())));
+        }
+
+        // Log the raw response for debugging
+        // let raw_response = response.text().await.map_err(|e| aur_parse_error(e.to_string()))?;
+        // info!("Raw AUR response: {}", raw_response);
+
+        // Attempt to parse the JSON
+        let raw_response = response.text().await.map_err(|e| aur_parse_error(e.to_string()))?;
+        serde_json::from_str::<AurResponse>(&raw_response)
+            .map(|r| r.results)
+            .map_err(|e| aur_parse_error(e.to_string()))
+    }
+
+    /// Gets detailed information about a specific package
+    pub async fn get_package_info(&self, package_name: &str) -> Result<AurPackage, AurError> {
+        let url = format!("{}/rpc/?v=5&type=info&arg={}", self.base_url, package_name);
+        info!("Fetching package info for: {}", package_name);
+
+        let response = self.client.get(&url)
+            .send()
+            .await
+            .map_err(|e| aur_request_failed(e.to_string()))?;
+
+        if !response.status().is_success() {
+            return Err(aur_api_error(format!("Status: {}", response.status())));
+        }
+
+        let mut aur_response: AurResponse = response.json()
+            .await
+            .map_err(|e| aur_parse_error(e.to_string()))?;
+
+        aur_response.results.pop()
+            .ok_or_else(|| aur_not_found(package_name))
+    }
+}
