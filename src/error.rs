@@ -21,7 +21,6 @@ pub enum BuildError {
 #[derive(Debug)]
 pub enum AlpmError {
     InitError(String),
-    QueryError(String),
     InstallError(String),
 }
 
@@ -51,7 +50,6 @@ impl fmt::Display for AlpmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AlpmError::InitError(e) => write!(f, "ALPM initialization failed: {}", e),
-            AlpmError::QueryError(e) => write!(f, "Package query failed: {}", e),
             AlpmError::InstallError(e) => write!(f, "Package installation failed: {}", e),
         }
     }

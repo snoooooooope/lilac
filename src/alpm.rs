@@ -21,7 +21,7 @@ impl AlpmWrapper {
     pub fn is_package_installed(&self, package_name: &str) -> Result<bool, AlpmError> {
         match self.alpm.localdb().pkg(package_name) {
             Ok(_) => Ok(true),
-            Err(e) => Err(QueryError(format!("Failed to query package: {}", e))),
+            Err(_) => Ok(false),
         }
     }
 
