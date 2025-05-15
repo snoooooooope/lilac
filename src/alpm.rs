@@ -45,4 +45,14 @@ impl AlpmWrapper {
         info!("Package installed successfully.");
         Ok(())
     }
+
+    /// Checks if a package is available in the official repositories (sync databases).
+    pub fn is_package_available(&self, package_name: &str) -> Result<bool, AlpmError> {
+        for db in self.alpm.syncdbs() {
+            if db.pkg(package_name).is_ok() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
 }

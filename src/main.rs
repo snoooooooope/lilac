@@ -101,9 +101,15 @@ async fn main() -> anyhow::Result<()> {
                 .context(format!("Failed to clone repository for {}", package))?;
             info!("Cloned repository to {:?}", build_dir);
 
-            // Execute makepkg to build the package
-            let package_path = build::PackageBuilder::execute_makepkg(&build_dir)
-                .context(format!("Failed to build package {}", package))?;
+            // Build the package and its dependencies
+            let package_path = build::PackageBuilder::build_package_with_deps(
+                &package,
+                &build_dir,
+                &aur,
+                &alpm,
+            ).await
+            .context(format!("Failed to build package {} with dependencies", package))?;
+
             info!("Built package file at {:?}", package_path);
 
             // Install the package using alpm
