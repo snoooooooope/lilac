@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 use log::info;
 use chrono::{TimeZone, Utc};
 use anyhow::Context;
+use colored::Colorize;
 
 /// CLI command structure
 #[derive(Parser)]
@@ -43,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize logging and config
     logging::init_logger();
     let config = config::AppConfig::load()?;
-    info!("Configuration loaded");
+    info!("{}\n", "Configuration loaded".bright_green());
 
     // Initialize clients
     let aur = aur::AurClient::new(config.aur_base_url.clone());
@@ -72,34 +73,45 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Commands::Install { package } => {
-            info!("Attempting to install package: {}", package);
+            info!(
+                "{} {}",
+                "Attempting to install package:".white(),
+                package.bright_green()
+            );
 
             // Check if already installed
             match alpm.is_package_installed(&package) {
                 Ok(true) => {
-                    println!("Package {} is already installed", package);
+                    println!(
+                        "{} {}",
+                        "Package".white(),
+                        format!("{} is already installed", package).bright_green()
+                    );
                     return Ok(());
                 }
                 Ok(false) => {
-                    info!("Package {} is not installed, proceeding with AUR installation", package);
+                    info!(
+                        "{} {} {}",
+                        "Package".white(),
+                        package.bright_green(),
+                        "is not installed, proceeding with AUR installation".white()
+                    );
                 }
                 Err(e) => {
-                    // A genuine error occurred while querying the local database
                     return Err(anyhow::anyhow!(e).context("Failed to check if package is installed"));
                 }
             }
 
             // Get package info from AUR
-            let pkg_info = aur.get_package_info(&package).await
-                .context(format!("Failed to get package info for {}", package))?;
-
-            println!("Building and installing {} version {}", pkg_info.name, pkg_info.version);
-
+            info!(
+                "{} {}",
+                "Fetching package info for:".white(),
+                package.bright_green()
+            );
             // Clone repository
             let build_dir = config.temp_path().join(&package);
             build::PackageBuilder::clone_repo(&package, &build_dir)
                 .context(format!("Failed to clone repository for {}", package))?;
-            info!("Cloned repository to {:?}", build_dir);
 
             // Build the package and its dependencies
             let package_path = build::PackageBuilder::build_package_with_deps(
@@ -109,8 +121,6 @@ async fn main() -> anyhow::Result<()> {
                 &alpm,
             ).await
             .context(format!("Failed to build package {} with dependencies", package))?;
-
-            info!("Built package file at {:?}", package_path);
 
             // Install the package using alpm
             alpm.install_package(&package_path)

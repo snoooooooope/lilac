@@ -2,7 +2,7 @@ use crate::error::{AlpmError, AlpmError::*};
 use alpm::Alpm;
 use std::process::Command;
 use std::path::Path;
-use log::info;
+use colored::Colorize;
 
 /// Handles ALPM (pacman) operations
 pub struct AlpmWrapper {
@@ -29,7 +29,13 @@ impl AlpmWrapper {
     /// Installs a package from a file.
     /// This will require sudo privileges.
     pub fn install_package(&self, package_path: &Path) -> Result<(), AlpmError> {
-        info!("Installing package from file: {:?}", package_path);
+        println!(
+            "{} {} {} {}\n",
+            "Installing:".white(),
+            package_path.file_name().unwrap().to_str().unwrap().bright_green(),
+            "from:".white(),
+            package_path.parent().unwrap().display().to_string().bright_cyan()
+        );
 
         let status = Command::new("sudo")
             .arg("pacman")
@@ -39,10 +45,14 @@ impl AlpmWrapper {
             .map_err(|e| AlpmError::InitError(format!("Failed to execute pacman: {}", e)))?;
 
         if !status.success() {
-            return Err(AlpmError::InitError(format!("pacman failed with exit code: {}", status)));
+            eprintln!("{}", "✗ Installation failed!".red().bold());
+            return Err(AlpmError::InitError(format!(
+                "pacman failed with exit code: {}",
+                status
+            )));
         }
 
-        info!("Package installed successfully.");
+        println!("{}", "✓ Successfully installed!".green().bold());
         Ok(())
     }
 

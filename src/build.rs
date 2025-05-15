@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::{str, fs};
 use crate::aur::AurClient;
 use crate::alpm::AlpmWrapper;
+use colored::Colorize;
 
 /// Handles package building operations
 pub struct PackageBuilder;
@@ -14,7 +15,13 @@ impl PackageBuilder {
     /// Clones a package repository from AUR
     pub fn clone_repo(package_name: &str, dest_path: &Path) -> Result<(), BuildError> {
         let url = format!("https://aur.archlinux.org/{}.git", package_name);
-        info!("Cloning repository: {} to {:?}", url, dest_path);
+        info!(
+            "{} {} {} {}\n",
+            "Cloning repository:".white(),
+            package_name.bright_green(),
+            "to".white(),
+            format!("{:?}", dest_path).bright_cyan()
+        );
 
         Repository::clone(&url, dest_path)
             .map_err(|e| BuildError::GitError(format!("Git clone failed: {}", e)))?;
@@ -26,7 +33,13 @@ impl PackageBuilder {
     /// Returns the path to the built package file.
     /// Prefers non-debug packages if available
     pub fn execute_makepkg(package_name: &str, build_dir: &Path) -> Result<PathBuf, BuildError> {
-        info!("Building package {} in: {:?}", package_name, build_dir);
+        info!(
+            "{} {} {} {}",
+            "Building package".white(),
+            package_name.bright_green(),
+            "in:".white(),
+            format!("{:?}", build_dir).bright_cyan()
+        );
 
         // Run makepkg
         let output = Command::new("makepkg")
@@ -44,7 +57,6 @@ impl PackageBuilder {
         }
 
         // Search for the package file in the build directory
-        info!("Searching for package file in: {:?}", build_dir);
         let entries = fs::read_dir(build_dir)
             .map_err(|e| BuildError::MakePkgError(format!("Failed to read build directory: {}", e)))?;
 
@@ -56,7 +68,6 @@ impl PackageBuilder {
                     && !file_name.contains("-debug-")
                     && file_name.starts_with(package_name)
                 {
-                    info!("Found package file: {:?}", path);
                     return Ok(path);
                 }
             }
@@ -68,7 +79,11 @@ impl PackageBuilder {
     /// Runs makepkg --printsrcinfo and extracts dependencies.
     /// Returns a list of dependency strings.
     pub fn get_dependencies_from_srcinfo(build_dir: &Path) -> Result<Vec<String>, BuildError> {
-        info!("Extracting dependencies from .SRCINFO in: {:?}", build_dir);
+        info!(
+            "{} {}",
+            "Extracting dependencies from .SRCINFO in:".white(),
+            format!("{:?}", build_dir).bright_cyan()
+        );
 
         let output = Command::new("makepkg")
             .current_dir(build_dir)
@@ -107,7 +122,6 @@ impl PackageBuilder {
             }
         }
 
-        info!("Found dependencies: {:?}", dependencies);
         Ok(dependencies)
     }
 
@@ -119,25 +133,55 @@ impl PackageBuilder {
         aur_client: &AurClient,
         alpm_wrapper: &AlpmWrapper,
     ) -> Result<PathBuf, BuildError> {
-        info!("Starting build process for {} with dependencies", package_name);
+        info!(
+            "{} {} {}\n",
+            "Starting build process for".white(),
+            package_name.bright_green(),
+            "with dependencies".white()
+        );
 
         let dependencies = Self::get_dependencies_from_srcinfo(build_dir)?;
-        info!("Processing {} dependencies for {}", dependencies.len(), package_name);
+        info!(
+            "{} {} {} {}",
+            "Processing".white(),
+            dependencies.len().to_string().bright_green(),
+            "dependencies for".white(),
+            package_name.bright_green()
+        );
 
         for dep in dependencies {
-            info!("Checking dependency: {}", dep);
+            info!(
+                "{} {}",
+                "Checking dependency:".white(),
+                dep.bright_green()
+            );
             
             if !alpm_wrapper.is_package_installed(&dep)
                 .map_err(|e| BuildError::MakePkgError(format!("ALPM error: {}", e)))? 
             {
-                info!("Dependency {} not installed, checking official repositories...", dep);
+                info!(
+                    "{} {} {}",
+                    "Dependency".white(),
+                    dep.bright_green(),
+                    "not installed, checking official repositories...".white()
+                );
                 if !alpm_wrapper.is_package_available(&dep)
                     .map_err(|e| BuildError::MakePkgError(format!("ALPM error: {}", e)))?
                 {
-                    info!("Dependency {} not in official repositories, checking AUR...", dep);
+                    info!(
+                        "{} {} {}",
+                        "Dependency".white(),
+                        dep.bright_green(),
+                        "not in official repositories, checking AUR...".white()
+                    );
                     match aur_client.get_package_info(&dep).await {
                         Ok(pkg) => {
-                            info!("Building AUR dependency: {} ({})", pkg.name, pkg.version);
+                            info!(
+                                "{} {} {}",
+                                "Building AUR dependency:".white(),
+                                pkg.name.bright_green(),
+                                format!("({})", pkg.version).bright_cyan()
+                            );
                             let dep_temp_dir = tempfile::tempdir()
                                 .map_err(|e| BuildError::MakePkgError(format!("Failed to create temp dir: {}", e)))?;
                             let dep_build_dir = dep_temp_dir.path().join(&dep);
@@ -150,17 +194,31 @@ impl PackageBuilder {
                                 .map_err(|e| BuildError::MakePkgError(format!("Installation failed: {}", e)))?;
                         }
                         Err(AurError::NotFound(_)) => {
-                            info!("Dependency {} not in AUR, skipping", dep);
+                            info!(
+                                "{} {} {}",
+                                "Dependency".white(),
+                                dep.bright_green(),
+                                "not in AUR, skipping".white()
+                            );
                         }
                         Err(e) => return Err(BuildError::MakePkgError(format!("AUR error: {}", e))),
                     }
                 } else {
-                    info!("Dependency {} is available in official repositories, skipping AUR check", dep);
+                    info!(
+                        "{} {} {}",
+                        "Dependency".white(),
+                        dep.bright_green(),
+                        "is available in official repositories, skipping AUR check".white()
+                    );
                 }
             }
         }
 
-        info!("All dependencies resolved, building main package: {}", package_name);
+        info!(
+            "{} {}\n",
+            "All dependencies resolved, building main package:".white(),
+            package_name.bright_green()
+        );
         let pkg_path = Self::execute_makepkg(package_name, build_dir)?;
         Ok(pkg_path)
     }
