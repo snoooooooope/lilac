@@ -11,6 +11,8 @@ const DEFAULT_CONFIG_CONTENT: &str = r#"
 aur_base_url = "https://aur.archlinux.org"
 "#;
 
+const DEFAULT_CACHE_DIR: &str = ".cache/lilac";
+
 /// Represents the application configuration.
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
@@ -76,5 +78,18 @@ impl AppConfig {
         self.temp_dir.as_ref()
             .expect("Temp directory should exist")
             .path()
+    }
+
+    /// Gets the path to the cache directory and ensures it exists
+    pub fn cache_path(&self) -> Result<PathBuf, ConfigError> {
+        let cache_dir = dirs::home_dir()
+            .ok_or_else(|| ConfigError::Message("Failed to resolve home directory".into()))?
+            .join(DEFAULT_CACHE_DIR);
+
+        fs::create_dir_all(&cache_dir).map_err(|e| {
+            ConfigError::Message(format!("Failed to create cache directory: {}", e))
+        })?;
+
+        Ok(cache_dir)
     }
 }

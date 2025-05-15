@@ -1,19 +1,19 @@
-use crate::error::{AlpmError, alpm_init_error, alpm_install_error};
+use crate::error::{AlpmError, alpm_init_error, alpm_install_error, alpm_remove_error};
 use alpm::Alpm;
 use std::process::Command;
 use std::path::Path;
 use colored::Colorize;
+use std::sync::Arc;
 
 pub struct AlpmWrapper {
-    alpm: Alpm,
+    alpm: Arc<Alpm>,
 }
 
 impl AlpmWrapper {
     pub fn new() -> Result<Self, AlpmError> {
         let alpm = Alpm::new("/", "/var/lib/pacman")
             .map_err(|e| alpm_init_error(format!("Failed to initialize ALPM: {}", e)))?;
-
-        Ok(AlpmWrapper { alpm })
+        Ok(AlpmWrapper { alpm: Arc::new(alpm) })
     }
 
     // Checks if a package is installed
@@ -83,10 +83,10 @@ impl AlpmWrapper {
             .arg("-Rc")
             .arg(package_name)
             .status()
-            .map_err(|e| crate::error::alpm_remove_error(format!("Failed to execute pacman for removal: {}", e)))?;
+            .map_err(|e| alpm_remove_error(format!("Failed to execute pacman for removal: {}", e)))?;
 
         if !status.success() {
-            Err(crate::error::alpm_remove_error(format!(
+            Err(alpm_remove_error(format!(
                 "pacman -Rc failed with exit code: {}",
                 status
             )))

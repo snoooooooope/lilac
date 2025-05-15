@@ -3,10 +3,8 @@ use git2::Repository;
 use std::process::Command;
 use std::path::{Path, PathBuf};
 use std::{str, fs};
-use crate::aur::AurClient;
-use crate::alpm::AlpmWrapper;
 use colored::Colorize;
-use crate::error::AurError;
+use crate::config::AppConfig;
 
 pub struct PackageBuilder;
 
@@ -14,8 +12,7 @@ impl PackageBuilder {
     pub fn clone_repo(package_name: &str, dest_path: &Path) -> Result<(), BuildError> {
         let url = format!("https://aur.archlinux.org/{}.git", package_name);
         println!(
-            "{} {} {} {}
-",
+            "{} {} {} {}",
             "Cloning repository:".bold(),
             package_name.bright_green(),
             "to".bold(),
@@ -82,8 +79,6 @@ impl PackageBuilder {
         Err(build_makepkg_error("No valid package file found after build", "package discovery"))
     }
 
-    // Runs makepkg --printsrcinfo and extracts dependencies.
-    // Returns a list of dependency strings.
     pub fn get_dependencies_from_srcinfo(build_dir: &Path) -> Result<Vec<String>, BuildError> {
         println!(
             "{} {}",
@@ -118,7 +113,6 @@ impl PackageBuilder {
             {
                 let dep = trimmed.splitn(2, '=').nth(1).unwrap_or("").trim();
                 if !dep.is_empty() {
-                    // Extract base package name (strip version constraints)
                     let pkg_name = dep.split(&['<', '>', '=', ' '][..])
                         .next()
                         .unwrap_or(dep)
@@ -137,122 +131,92 @@ impl PackageBuilder {
     pub async fn build_package_with_deps(
         package_name: &str,
         build_dir: &Path,
-        aur_client: &AurClient,
-        alpm_wrapper: &AlpmWrapper,
+        config: &AppConfig,
     ) -> Result<PathBuf, BuildError> {
-        // Verify .SRCINFO exists before proceeding
-        let srcinfo_path = build_dir.join(".SRCINFO");
-        if !srcinfo_path.exists() {
-            return Err(build_makepkg_error(
-                format!("No .SRCINFO found for package {} - is this a valid AUR package?", package_name),
-                "dependency resolution"
-            ));
+        let cache_dir = config.cache_path().map_err(|e| build_makepkg_error(
+            format!("Failed to access cache directory: {}", e),
+            "caching",
+        ))?;
+        let cached_pkg = Self::find_cached_package(&cache_dir, package_name);
+        if let Some(cached_pkg) = cached_pkg {
+            println!(
+                "{} {} {}",
+                "Using cached package:".bold(),
+                package_name.bright_green(),
+                format!("({:?})", cached_pkg).bright_cyan()
+            );
+            return Ok(cached_pkg);
         }
 
-        println!(
-            "{} {} {}
-",
-            "Starting build process for".bold(),
-            package_name.bright_green(),
-            "with dependencies".bold()
-        );
+        let pkg_path = Self::execute_makepkg(package_name, build_dir)?;
+        Self::cache_package(&pkg_path, &cache_dir, package_name)?;
+        Ok(pkg_path)
+    }
 
-        let dependencies = Self::get_dependencies_from_srcinfo(build_dir)?;
-        println!(
-            "{} {} {} {}",
-            "Processing".bold(),
-            dependencies.len().to_string().bright_green(),
-            "dependencies for".bold(),
-            package_name.bright_green()
-        );
-
-        for dep in dependencies {
-            println!(
-                "{} {}",
-                "Checking dependency:".bold(),
-                dep.bright_green()
-            );
-            
-            if !alpm_wrapper.is_package_installed(&dep)
-                .map_err(|e| build_makepkg_error(
-                    format!("ALPM error: {}", e),
-                    "dependency resolution"
-                ))? 
-            {
-                println!(
-                    "{} {} {}",
-                    "Dependency".bold(),
-                    dep.bright_green(),
-                    "not installed, checking official repositories...".bold()
-                );
-                if !alpm_wrapper.is_package_available(&dep)
-                    .map_err(|e| build_makepkg_error(
-                        format!("ALPM error: {}", e),
-                        "dependency resolution"
-                    ))?
-                {
-                    println!(
-                        "{} {} {}",
-                        "Dependency".bold(),
-                        dep.bright_green(),
-                        "not in official repositories, checking AUR...".bold()
-                    );
-                    match aur_client.get_package_info(&dep).await {
-                        Ok(pkg) => {
-                            println!(
-                                "{} {} {}",
-                                "Building AUR dependency:".bold(),
-                                pkg.name.bright_green(),
-                                format!("({})", pkg.version).bright_cyan()
-                            );
-                            let dep_temp_dir = tempfile::tempdir()
-                                .map_err(|e| build_makepkg_error(
-                                    format!("Failed to create temp dir: {}", e),
-                                    "dependency resolution"
-                                ))?;
-                            let dep_build_dir = dep_temp_dir.path().join(&dep);
-
-                            Self::clone_repo(&dep, &dep_build_dir)?;
-                            let pkg_path = Box::pin(Self::build_package_with_deps(&dep, &dep_build_dir, aur_client, alpm_wrapper)).await?;
-                            
-                            println!("{}: {}", "Installing dependency".bold(), dep);
-                            alpm_wrapper.install_package(&pkg_path)
-                                .map_err(|e| build_makepkg_error(
-                                    format!("Installation failed: {}", e),
-                                    "dependency resolution"
-                                ))?;
-                        }
-                        Err(AurError::NotFound(_)) => {
-                            println!(
-                                "{} {} {}",
-                                "Dependency".bold(),
-                                dep.bright_green(),
-                                "not in AUR, skipping".bold()
-                            );
-                        }
-                        Err(e) => return Err(build_makepkg_error(
-                            format!("AUR error: {}", e),
-                            "dependency resolution"
-                        )),
+    pub fn find_cached_package(cache_dir: &Path, package_name: &str) -> Option<PathBuf> {
+        let entries = fs::read_dir(cache_dir).ok()?;
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
+                    if file_name.starts_with(package_name) 
+                        && (file_name.ends_with(".pkg.tar.zst") || file_name.ends_with(".pkg.tar.xz"))
+                    {
+                        return Some(path);
                     }
-                } else {
+                }
+            }
+        }
+        None
+    }
+
+    fn cache_package(pkg_path: &Path, cache_dir: &Path, package_name: &str) -> Result<(), BuildError> {
+        let cached_path = cache_dir.join(pkg_path.file_name().unwrap());
+        fs::copy(pkg_path, &cached_path).map_err(|e| build_makepkg_error(
+            format!("Failed to cache package: {}", e),
+            "caching",
+        ))?;
+
+        println!(
+            "{} {} {}",
+            "Cached package:".bold(),
+            package_name.bright_green(),
+            format!("({:?})", cached_path).bright_cyan()
+        );
+        Ok(())
+    }
+
+    /// Deletes a package from the cache directory.
+    pub fn delete_cached_package(cache_dir: &Path, package_name: &str) -> Result<(), BuildError> {
+        let entries = fs::read_dir(cache_dir)
+            .map_err(|e| build_makepkg_error(
+                format!("Failed to read cache directory: {}", e),
+                "cache cleanup",
+            ))?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| build_makepkg_error(
+                format!("Error reading cache directory entry: {}", e),
+                "cache cleanup",
+            ))?;
+            let path = entry.path();
+            if let Some(file_name) = path.file_name().and_then(|f| f.to_str()) {
+                if file_name.starts_with(package_name) 
+                    && (file_name.ends_with(".pkg.tar.zst") || file_name.ends_with(".pkg.tar.xz"))
+                {
+                    fs::remove_file(&path).map_err(|e| build_makepkg_error(
+                        format!("Failed to delete cached package: {}", e),
+                        "cache cleanup",
+                    ))?;
                     println!(
                         "{} {} {}",
-                        "Dependency".bold(),
-                        dep.bright_green(),
-                        "is available in official repositories, skipping AUR check".bold()
+                        "Deleted cached package:".bold(),
+                        package_name.bright_green(),
+                        format!("({:?})", path).bright_cyan()
                     );
                 }
             }
         }
-
-        println!(
-            "{} {}
-",
-            "All dependencies resolved, building main package:".bold(),
-            package_name.bright_green()
-        );
-        let pkg_path = Self::execute_makepkg(package_name, build_dir)?;
-        Ok(pkg_path)
+        Ok(())
     }
 }
