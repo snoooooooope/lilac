@@ -28,13 +28,9 @@ Lilac is a **KISS** AUR helper designed to search, download, and build packages 
 
    hg clone https://hg.sr.ht/~snoooooooope/lilac
 
-
-
    (Mirror)
 
    git clone https://github.com/snoooooooope/lilac.git
-
-
 
    cd lilac
 
@@ -48,11 +44,7 @@ Lilac is a **KISS** AUR helper designed to search, download, and build packages 
 
    ```
 
-
-
 ## Usage
-
-
 
 ```bash
 
@@ -60,23 +52,21 @@ Lilac is a **KISS** AUR helper designed to search, download, and build packages 
 
 lilac search stuxnet
 
-
-
 # Install a package
 
 lilac install stuxnet
-
-
 
 # Remove a package
 
 lilac remove stuxnet
 
-
-
 # Get package info
 
 lilac info stuxnet
+
+# Get package info (including deps)
+
+lilac info stuxnet --deps
 
 ```
 
@@ -90,11 +80,7 @@ lilac info stuxnet
 
 ## Contributing
 
-
-
 Contributions are welcome from everyone. Here's how you can help:
-
-
 
 ### Mercurial (Preferred)
 
@@ -191,8 +177,6 @@ Contributions are welcome from everyone. Here's how you can help:
 
 
 ## License
-
-
 
 Lilac is MIT licensed.
 

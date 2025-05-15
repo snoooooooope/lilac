@@ -1,6 +1,7 @@
 use std::fmt;
+use config::ConfigError;
 
-/// Custom error types for the AUR module
+/// AUR module errors
 #[derive(Debug)]
 pub enum AurError {
     RequestFailed(String),
@@ -9,14 +10,14 @@ pub enum AurError {
     ApiError(String),
 }
 
-/// Custom error types for the build module
+/// Build module errors
 #[derive(Debug)]
 pub enum BuildError {
     GitError { source: String, package: String },
     MakePkgError { source: String, stage: String },
 }
 
-/// Custom error types for the ALPM module
+/// ALPM module errors
 #[derive(Debug)]
 pub enum AlpmError {
     InitError(String),
@@ -26,7 +27,7 @@ pub enum AlpmError {
     NotFound(String),
 }
 
-// Implement Display for our error types
+// Implement Display for error types
 impl fmt::Display for AurError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -61,7 +62,7 @@ impl fmt::Display for AlpmError {
     }
 }
 
-// Implement Error trait for our error types
+// Error traits for error types
 impl std::error::Error for AurError {}
 impl std::error::Error for BuildError {}
 impl std::error::Error for AlpmError {}
@@ -102,5 +103,24 @@ pub fn build_makepkg_error(source: impl Into<String>, stage: impl Into<String>) 
     BuildError::MakePkgError {
         source: source.into(),
         stage: stage.into()
+    }
+}
+
+// Implementations for error types
+impl From<ConfigError> for BuildError {
+    fn from(err: ConfigError) -> Self {
+        BuildError::MakePkgError {
+            source: format!("Config error: {}", err),
+            stage: "configuration".to_string(),
+        }
+    }
+}
+
+impl From<AlpmError> for BuildError {
+    fn from(err: AlpmError) -> Self {
+        BuildError::MakePkgError {
+            source: format!("ALPM error: {}", err),
+            stage: "dependency installation".to_string(),
+        }
     }
 }

@@ -1,4 +1,4 @@
-use crate::error::{AlpmError, alpm_init_error, alpm_install_error, alpm_remove_error};
+use super::error::{AlpmError, alpm_init_error, alpm_install_error, alpm_remove_error};
 use alpm::Alpm;
 use std::process::Command;
 use std::path::Path;
@@ -21,16 +21,14 @@ impl AlpmWrapper {
         self.alpm.localdb().pkg(package_name)
             .map(|_| true)
             .or_else(|e| match e {
-                alpm::Error::PkgNotFound => Err(AlpmError::NotFound(package_name.to_string())),
+                alpm::Error::PkgNotFound => Ok(false),
                 e => Err(AlpmError::DatabaseError(format!("Database query failed: {}", e))),
             })
     }
 
-    // Installs a package from a file.
     pub fn install_package(&self, package_path: &Path) -> Result<(), AlpmError> {
         println!(
-            "{} {} {} {}
-",
+            "{} {} {} {}",
             "Installing:".bold(),
             package_path.file_name().unwrap().to_str().unwrap().bright_green(),
             "from:".bold(),
@@ -69,31 +67,55 @@ impl AlpmWrapper {
         Ok(false)
     }
 
-    // Removes a package from the system.
-    pub fn remove_package(&self, package_name: &str) -> Result<(), AlpmError> {
+    // Removes a package from the system recursively, removing dependencies no longer needed
+    pub fn remove_package(&self, package_names: &[String]) -> Result<(), AlpmError> {
         println!(
-            "{} {} {}",
+            "{} {:?} {}",
             "Removing:".bold(),
-            package_name.bright_green(),
+            package_names,
             "from the system".bold()
         );
 
         let status = Command::new("sudo")
             .arg("pacman")
-            .arg("-Rc")
-            .arg(package_name)
+            .arg("-Rs")
+            .args(package_names)
             .status()
             .map_err(|e| alpm_remove_error(format!("Failed to execute pacman for removal: {}", e)))?;
 
         if !status.success() {
             Err(alpm_remove_error(format!(
-                "pacman -Rc failed with exit code: {}",
+                "pacman -Rs failed with exit code: {}",
                 status
             )))
         } else {
-            println!("
-{}
-", "✓ Successfully removed!".green().bold());
+            println!("{}", "✓ Successfully removed!".green().bold());
+            Ok(())
+        }
+    }
+
+    pub fn force_remove_package(&self, package_name: &str) -> Result<(), AlpmError> {
+        println!(
+            "{} {} {}",
+            "Forcibly removing:".bold(),
+            package_name.bright_green(),
+            "from the system (bypassing dependency checks)".bold()
+        );
+
+        let status = Command::new("sudo")
+            .arg("pacman")
+            .arg("-R")
+            .arg(package_name)
+            .status()
+            .map_err(|e| alpm_remove_error(format!("Failed to execute pacman for forced removal: {}", e)))?;
+
+        if !status.success() {
+            Err(alpm_remove_error(format!(
+                "pacman -R failed with exit code: {}",
+                status
+            )))
+        } else {
+            println!("\n{}", "✓ Successfully force removed!".green().bold());
             Ok(())
         }
     }

@@ -13,7 +13,6 @@ aur_base_url = "https://aur.archlinux.org"
 
 const DEFAULT_CACHE_DIR: &str = ".cache/lilac";
 
-/// Represents the application configuration.
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
     #[serde(default = "default_aur_base_url")]
@@ -27,7 +26,6 @@ fn default_aur_base_url() -> String {
 }
 
 impl AppConfig {
-    /// Loads the configuration and sets up temporary directory
     pub fn load() -> Result<Self, ConfigError> {
         let temp_dir = tempdir().map_err(|e| {
             ConfigError::Message(format!("Failed to create temp directory: {}", e))
@@ -58,7 +56,7 @@ impl AppConfig {
 
         if let Some(ref path) = user_config_path {
              config_builder = config_builder.add_source(
-                 File::from(path.clone()).required(false) // Use required(false) in case the file was somehow deleted
+                 File::from(path.clone()).required(false)
              );
         }
 

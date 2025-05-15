@@ -4,6 +4,7 @@ pub mod build;
 pub mod config;
 pub mod error;
 pub mod logging;
+pub mod commands;
 
 pub use alpm::AlpmWrapper;
 pub use aur::AurClient;
