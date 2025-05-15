@@ -12,14 +12,16 @@ pub enum AurError {
 /// Custom error types for the build module
 #[derive(Debug)]
 pub enum BuildError {
-    GitError(String),
-    MakePkgError(String),
+    GitError { source: String, package: String },
+    MakePkgError { source: String, stage: String },
 }
 
 /// Custom error types for the ALPM module
 #[derive(Debug)]
 pub enum AlpmError {
     InitError(String),
+    InstallError(String),
+    DatabaseError(String),
 }
 
 // Implement Display for our error types
@@ -37,8 +39,10 @@ impl fmt::Display for AurError {
 impl fmt::Display for BuildError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BuildError::GitError(e) => write!(f, "Git operation failed: {}", e),
-            BuildError::MakePkgError(e) => write!(f, "makepkg failed: {}", e),
+            BuildError::GitError { source, package } => 
+                write!(f, "Git operation failed (package: {}): {}", package, source),
+            BuildError::MakePkgError { source, stage } => 
+                write!(f, "makepkg failed during {}: {}", stage, source),
         }
     }
 }
@@ -47,6 +51,8 @@ impl fmt::Display for AlpmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AlpmError::InitError(e) => write!(f, "ALPM initialization failed: {}", e),
+            AlpmError::InstallError(e) => write!(f, "Package installation failed: {}", e),
+            AlpmError::DatabaseError(e) => write!(f, "Database operation failed: {}", e),
         }
     }
 }
@@ -65,10 +71,28 @@ pub fn aur_parse_error(e: impl Into<String>) -> AurError {
     AurError::ParseError(e.into())
 }
 
-pub fn aur_not_found(pkg: impl Into<String>) -> AurError {
-    AurError::NotFound(pkg.into())
-}
-
 pub fn aur_api_error(e: impl Into<String>) -> AurError {
     AurError::ApiError(e.into())
+}
+
+pub fn alpm_init_error(e: impl Into<String>) -> AlpmError {
+    AlpmError::InitError(e.into())
+}
+
+pub fn alpm_install_error(e: impl Into<String>) -> AlpmError {
+    AlpmError::InstallError(e.into())
+}
+
+pub fn build_git_error(source: impl Into<String>, package: impl Into<String>) -> BuildError {
+    BuildError::GitError {
+        source: source.into(),
+        package: package.into()
+    }
+}
+
+pub fn build_makepkg_error(source: impl Into<String>, stage: impl Into<String>) -> BuildError {
+    BuildError::MakePkgError {
+        source: source.into(),
+        stage: stage.into()
+    }
 }

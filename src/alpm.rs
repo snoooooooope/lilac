@@ -1,33 +1,32 @@
-use crate::error::{AlpmError, AlpmError::*};
+use crate::error::{AlpmError, alpm_init_error, alpm_install_error};
 use alpm::Alpm;
 use std::process::Command;
 use std::path::Path;
 use colored::Colorize;
 
-/// Handles ALPM (pacman) operations
 pub struct AlpmWrapper {
     alpm: Alpm,
 }
 
 impl AlpmWrapper {
-    /// Creates a new ALPM wrapper instance
     pub fn new() -> Result<Self, AlpmError> {
         let alpm = Alpm::new("/", "/var/lib/pacman")
-            .map_err(|e| InitError(format!("Failed to initialize ALPM: {}", e)))?;
+            .map_err(|e| alpm_init_error(format!("Failed to initialize ALPM: {}", e)))?;
 
         Ok(AlpmWrapper { alpm })
     }
 
-    /// Checks if a package is installed
+    // Checks if a package is installed
     pub fn is_package_installed(&self, package_name: &str) -> Result<bool, AlpmError> {
-        match self.alpm.localdb().pkg(package_name) {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
-        }
+        self.alpm.localdb().pkg(package_name)
+            .map(|_| true)
+            .or_else(|e| match e {
+                alpm::Error::PkgNotFound => Ok(false),
+                e => Err(AlpmError::DatabaseError(format!("Database query failed: {}", e))),
+            })
     }
 
-    /// Installs a package from a file.
-    /// This will require sudo privileges.
+    // Installs a package from a file.
     pub fn install_package(&self, package_path: &Path) -> Result<(), AlpmError> {
         println!(
             "{} {} {} {}\n",
@@ -42,25 +41,28 @@ impl AlpmWrapper {
             .arg("-U")
             .arg(package_path)
             .status()
-            .map_err(|e| AlpmError::InitError(format!("Failed to execute pacman: {}", e)))?;
+            .map_err(|e| alpm_install_error(format!("Failed to execute pacman: {}", e)))?;
 
         if !status.success() {
-            eprintln!("{}", "✗ Installation failed!".red().bold());
-            return Err(AlpmError::InitError(format!(
+            Err(alpm_install_error(format!(
                 "pacman failed with exit code: {}",
                 status
-            )));
+            )))
+        } else {
+            println!("\n{}", "✓ Successfully installed!\n".green().bold());
+            Ok(())
         }
-
-        println!("{}", "✓ Successfully installed!".green().bold());
-        Ok(())
     }
 
-    /// Checks if a package is available in the official repositories (sync databases).
+    // Checks if a package is available in the official repositories.
     pub fn is_package_available(&self, package_name: &str) -> Result<bool, AlpmError> {
         for db in self.alpm.syncdbs() {
-            if db.pkg(package_name).is_ok() {
-                return Ok(true);
+            match db.pkg(package_name) {
+                Ok(_) => return Ok(true),
+                Err(alpm::Error::PkgNotFound) => continue,
+                Err(e) => return Err(AlpmError::DatabaseError(format!(
+                    "Database query failed: {}", e
+                ))),
             }
         }
         Ok(false)

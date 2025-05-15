@@ -16,8 +16,8 @@ aur_base_url = "https://aur.archlinux.org"
 pub struct AppConfig {
     #[serde(default = "default_aur_base_url")]
     pub aur_base_url: String,
-    #[serde(skip)] // This field won't be loaded from config files
-    pub temp_dir: Option<TempDir>, // Managed by tempfile
+    #[serde(skip)]
+    pub temp_dir: Option<TempDir>,
 }
 
 fn default_aur_base_url() -> String {
@@ -27,12 +27,10 @@ fn default_aur_base_url() -> String {
 impl AppConfig {
     /// Loads the configuration and sets up temporary directory
     pub fn load() -> Result<Self, ConfigError> {
-        // Create temp directory that will auto-delete when dropped
         let temp_dir = tempdir().map_err(|e| {
             ConfigError::Message(format!("Failed to create temp directory: {}", e))
         })?;
 
-        // Determine user config file path
         let user_config_path: Option<PathBuf> = dirs::config_dir()
             .map(|mut path| {
                 path.push("lilac");
@@ -40,15 +38,12 @@ impl AppConfig {
                 path
             });
 
-        // Create config directory and file if they don't exist
         if let Some(ref path) = user_config_path {
             if let Some(dir_path) = path.parent() {
-                // Create directory recursively if it doesn't exist
                 fs::create_dir_all(dir_path).map_err(|e| {
                     ConfigError::Message(format!("Failed to create config directory {}: {}", dir_path.display(), e))
                 })?;
 
-                // Create the default config file if it doesn't exist
                 if !path.exists() {
                     fs::write(path, DEFAULT_CONFIG_CONTENT).map_err(|e| {
                         ConfigError::Message(format!("Failed to create default config file {}: {}", path.display(), e))
@@ -59,7 +54,6 @@ impl AppConfig {
 
         let mut config_builder = Config::builder();
 
-        // Add user config file as a source if path is determined and it exists
         if let Some(ref path) = user_config_path {
              config_builder = config_builder.add_source(
                  File::from(path.clone()).required(false) // Use required(false) in case the file was somehow deleted
@@ -73,7 +67,6 @@ impl AppConfig {
             .build()?
             .try_deserialize::<Self>()?;
 
-        // Store the temp dir handle to prevent deletion
         config.temp_dir = Some(temp_dir);
         Ok(config)
     }
