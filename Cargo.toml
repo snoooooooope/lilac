@@ -1,8 +1,13 @@
 [package]
 name = "lilac"
 version = "1.0.0"
+description = "a KISS AUR helper designed to smell good, and get out of the way."
 edition = "2024"
 repository = "https://github.com/snoooooooope/lilac"
+license-file = "LICENSE"
+readme = "README.md"
+categories = ["command-line-utilities", "development-tools::build-utils"]
+keywords = ["aur", "arch", "build", "archlinux", "cli"]
 
 [dependencies]
 alpm = "4.0.3"

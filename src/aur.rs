@@ -1,10 +1,8 @@
 use crate::error::{AurError, aur_request_failed, aur_parse_error, aur_api_error};
 use reqwest::Client;
 use serde::Deserialize;
-use log::info;
 use std::time::Duration;
 use serde_json;
-use colored::Colorize;
 
 #[derive(Debug, Deserialize)]
 pub struct AurPackage {
@@ -49,8 +47,7 @@ impl AurClient {
     }
 
     pub async fn search_packages(&self, query: &str) -> Result<Vec<AurPackage>, AurError> {
-        let url = format!("{}/rpc/?v=5&type=search&arg={}", self.base_url, query);
-        info!("Searching AUR for: {}", query);
+        let url = format!("{}/rpc/?v=5&type=search&by=name&arg={}", self.base_url, query);
 
         let response = self.client.get(&url)
             .send()
@@ -69,11 +66,6 @@ impl AurClient {
 
     pub async fn get_package_info(&self, package_name: &str) -> Result<AurPackage, AurError> {
         let url = format!("{}/rpc/?v=5&type=info&arg={}", self.base_url, package_name);
-        info!(
-            "{} {}",
-            "Fetching package info for:".white(),
-            package_name.bright_green()
-        );
 
         let response = self.client.get(&url)
             .send()

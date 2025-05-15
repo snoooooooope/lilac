@@ -21,7 +21,7 @@ impl AlpmWrapper {
         self.alpm.localdb().pkg(package_name)
             .map(|_| true)
             .or_else(|e| match e {
-                alpm::Error::PkgNotFound => Ok(false),
+                alpm::Error::PkgNotFound => Err(AlpmError::NotFound(package_name.to_string())),
                 e => Err(AlpmError::DatabaseError(format!("Database query failed: {}", e))),
             })
     }
@@ -29,10 +29,11 @@ impl AlpmWrapper {
     // Installs a package from a file.
     pub fn install_package(&self, package_path: &Path) -> Result<(), AlpmError> {
         println!(
-            "{} {} {} {}\n",
-            "Installing:".white(),
+            "{} {} {} {}
+",
+            "Installing:".bold(),
             package_path.file_name().unwrap().to_str().unwrap().bright_green(),
-            "from:".white(),
+            "from:".bold(),
             package_path.parent().unwrap().display().to_string().bright_cyan()
         );
 
@@ -66,5 +67,34 @@ impl AlpmWrapper {
             }
         }
         Ok(false)
+    }
+
+    // Removes a package from the system.
+    pub fn remove_package(&self, package_name: &str) -> Result<(), AlpmError> {
+        println!(
+            "{} {} {}",
+            "Removing:".bold(),
+            package_name.bright_green(),
+            "from the system".bold()
+        );
+
+        let status = Command::new("sudo")
+            .arg("pacman")
+            .arg("-Rc")
+            .arg(package_name)
+            .status()
+            .map_err(|e| crate::error::alpm_remove_error(format!("Failed to execute pacman for removal: {}", e)))?;
+
+        if !status.success() {
+            Err(crate::error::alpm_remove_error(format!(
+                "pacman -Rc failed with exit code: {}",
+                status
+            )))
+        } else {
+            println!("
+{}
+", "✓ Successfully removed!".green().bold());
+            Ok(())
+        }
     }
 }

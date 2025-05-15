@@ -10,10 +10,10 @@ use log::{info, debug};
 use chrono::{TimeZone, Utc};
 use anyhow::Context;
 use colored::Colorize;
-use crate::error::AurError;
+use crate::error::{AurError, AlpmError};
 
 #[derive(Parser)]
-#[command(version, about, long_about = None)]
+#[command(version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -24,6 +24,7 @@ enum Commands {
     Search { query: String },
     Install { package: String },
     Info { package: String },
+    Remove { package: String },
 }
 
 #[tokio::main]
@@ -39,35 +40,34 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Search { query } => {
-            info!("Searching for: {}", query);
+            info!("\n{}: {}", "Searching for".bold(), query.bright_green());
             let results = aur.search_packages(&query).await?;
             for pkg in results {
-                println!("Name: {}", pkg.name);
-                println!("Version: {}", pkg.version);
+                println!("\n{}: {}", "Name".bold(), pkg.name.bright_green());
+                println!("{}: {}", "Version".bold(), pkg.version.bright_cyan());
                 if let Some(desc) = pkg.description {
-                    println!("Description: {}", desc);
+                    println!("{}: {}", "Description".bold(), desc);
                 }
                 if let Some(url) = pkg.url {
-                    println!("URL: {}", url);
+                    println!("{}: {}", "URL".bold(), url);
                 }
                 if let Some(maintainer) = pkg.maintainer {
-                    println!("Maintainer: {}", maintainer);
+                    println!("{}: {}", "Maintainer".bold(), maintainer);
                 }
-                println!("--------------------");
             }
         }
         Commands::Install { package } => {
-            info!(
+            println!(
                 "\n{} {}",
-                "Attempting to install package:".white(),
+                "Attempting to install package:".bold(),
                 package.bright_green()
             );
 
-            info!("{} {}", "Checking AUR for package:".white(), package.bright_green());
+            println!("{} {}", "Checking AUR for package:".bold(), package.bright_green());
             match aur.get_package_info(&package).await {
-                Ok(pkg) => info!("{} {} {}", "Found package:".white(), pkg.name.bright_green(), format!("({})", pkg.version).bright_cyan()),
+                Ok(pkg) => println!("{} {} {}", "Found package:".bold(), pkg.name.bright_green(), format!("({})", pkg.version).bright_cyan()),
                 Err(AurError::NotFound(_)) => {
-                    eprintln!("\n{} {}\n", "✗ Package not found in AUR:".red().bold(), package.bright_red());
+                    eprintln!("\n{} {}", "✗ Package not found in AUR:".red().bold(), package.bright_red());
                     return Ok(());
                 }
                 Err(e) => return Err(e.into()),
@@ -77,28 +77,31 @@ async fn main() -> anyhow::Result<()> {
                 Ok(true) => {
                     println!(
                         "\n{} {} {}\n",
-                        "Package".white(),
+                        "Package".bold(),
                         package.bright_green(),
-                        "is already installed".white()
+                        "is already installed"
                     );
                     return Ok(());
                 }
-                Ok(false) => {
-                    info!(
-                        "\n{} {} {}\n",
-                        "Package".white(),
+                Err(AlpmError::NotFound(_)) => {
+                    println!(
+                        "\n{} {} {}",
+                        "Package".bold(),
                         package.bright_green(),
-                        "is not installed, proceeding with AUR installation".white()
+                        "is not installed, proceeding with AUR installation".bold()
                     );
+                }
+                Ok(false) => {
+                    return Err(anyhow::anyhow!("Unexpected result from is_package_installed: Ok(false)"));
                 }
                 Err(e) => {
                     return Err(anyhow::anyhow!(e).context("Failed to check if package is installed"));
                 }
             }
 
-            info!(
+            println!(
                 "{} {}",
-                "Fetching package info for:".white(),
+                "Fetching package info for:".bold(),
                 package.bright_green()
             );
 
@@ -119,23 +122,44 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Info { package } => {
             let pkg_info = aur.get_package_info(&package).await?;
-            println!("Package: {}", pkg_info.name);
-            println!("Version: {}", pkg_info.version);
+            println!("{}: {}", "\nPackage".bold(), pkg_info.name.green());
+            println!("{}: {}", "Version".bold(), pkg_info.version.bright_cyan());
             if let Some(desc) = pkg_info.description {
-                println!("Description: {}", desc);
+                println!("{}: {}", "Description".bold(), desc);
             }
             if let Some(url) = pkg_info.url {
-                println!("URL: {}", url);
+                println!("{}: {}", "URL".bold(), url);
             }
             if let Some(maintainer) = pkg_info.maintainer {
-                println!("Maintainer: {}", maintainer);
+                println!("{}: {}", "Maintainer".bold(), maintainer);
             }
-            println!("Votes: {}", pkg_info.num_votes);
-            println!("Popularity: {}", pkg_info.popularity);
+            println!("{}: {}", "Votes".bold(), pkg_info.num_votes);
+            println!("{}: {}", "Popularity".bold(), pkg_info.popularity);
             let first_submitted_dt = Utc.timestamp_opt(pkg_info.first_submitted as i64, 0).unwrap();
             let last_modified_dt = Utc.timestamp_opt(pkg_info.last_modified as i64, 0).unwrap();
-            println!("First Submitted: {}", first_submitted_dt.format("%Y-%m-%d %H:%M:%S UTC"));
-            println!("Last Modified: {}", last_modified_dt.format("%Y-%m-%d %H:%M:%S UTC"));
+            println!("{}: {}", "First Submitted".bold(), first_submitted_dt.format("%m/%d/%Y"));
+            println!("{}: {}", "Last Modified".bold(), last_modified_dt.format("%m/%d/%Y"));
+        }
+        Commands::Remove { package } => {
+            match alpm.is_package_installed(&package) {
+                Ok(true) => {
+                    println!(
+                        "\n{} {} {}",
+                        "Package".bold(),
+                        package.bright_green(),
+                        "is installed, proceeding with removal".bold()
+                    );
+                    alpm.remove_package(&package)
+                        .context(format!("Failed to remove package {}", package))?;
+                }
+                Ok(false) => {
+                    eprintln!("\n{} {}", "✗ Package not found in system:".red().bold(), package.bright_red());
+                    return Ok(());
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!(e).context("Failed to check if package is installed"));
+                }
+            }
         }
     }
 

@@ -22,6 +22,8 @@ pub enum AlpmError {
     InitError(String),
     InstallError(String),
     DatabaseError(String),
+    RemoveError(String),
+    NotFound(String),
 }
 
 // Implement Display for our error types
@@ -53,6 +55,8 @@ impl fmt::Display for AlpmError {
             AlpmError::InitError(e) => write!(f, "ALPM initialization failed: {}", e),
             AlpmError::InstallError(e) => write!(f, "Package installation failed: {}", e),
             AlpmError::DatabaseError(e) => write!(f, "Database operation failed: {}", e),
+            AlpmError::RemoveError(e) => write!(f, "Package removal failed: {}", e),
+            AlpmError::NotFound(e) => write!(f, "Package not found in ALPM: {}", e),
         }
     }
 }
@@ -81,6 +85,10 @@ pub fn alpm_init_error(e: impl Into<String>) -> AlpmError {
 
 pub fn alpm_install_error(e: impl Into<String>) -> AlpmError {
     AlpmError::InstallError(e.into())
+}
+
+pub fn alpm_remove_error(e: impl Into<String>) -> AlpmError {
+    AlpmError::RemoveError(e.into())
 }
 
 pub fn build_git_error(source: impl Into<String>, package: impl Into<String>) -> BuildError {
