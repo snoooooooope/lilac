@@ -37,15 +37,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alpm-rs"
-version = "0.1.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85b1769041d4cd4d43dd4bb1d3a020352549ab7be18c51c77be03f500fb6a45b"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "alpm-sys"
 version = "4.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1067,10 +1058,9 @@ dependencies = [
 
 [[package]]
 name = "lilac"
-version = "0.1.0"
+version = "0.9.0"
 dependencies = [
  "alpm",
- "alpm-rs",
  "anyhow",
  "chrono",
  "clap",

@@ -1,11 +1,11 @@
 [package]
 name = "lilac"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
+repository = "https://github.com/snoooooooope/lilac"
 
 [dependencies]
 alpm = "4.0.3"
-alpm-rs = "0.1.24"
 anyhow = "1.0.98"
 clap = { version = "4.5.38", features = ["derive"] }
 config = "0.15.11"
