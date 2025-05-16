@@ -142,13 +142,6 @@ impl PackageBuilder {
             }
         }
 
-        if dependencies.is_empty() {
-            return Err(build_makepkg_error(
-                "No valid dependencies found in .SRCINFO".to_string(),
-                "dependency extraction"
-            ));
-        }
-
         Ok(dependencies)
     }
 
