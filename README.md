@@ -23,6 +23,8 @@ Lilac is a **KISS** AUR helper designed to search, download, and build packages 
 lilac search stuxnet
 # Install a package
 lilac install stuxnet
+# Update a packag
+lilac update stuxnet
 # Remove a package
 lilac remove stuxnet
 # Get package info
@@ -44,7 +46,7 @@ Contributions are welcome from everyone. Here's how you can help:
 ### JJ
 1. **Clone the repository**:
    ```bash
-   jj git clone https://git.cyno.space/ryan/lilac.git
+   jj git clone https://github.com/snoooooooope/lilac.git
    ```
 2. **Create a feature**:
    ```bash

@@ -53,7 +53,7 @@ pub async fn handle_command(
         }
         Commands::Install { package } => {
             println!(
-                "\n{} {}",
+                "{} {}",
                 "Attempting to install package:".bold(),
                 package.bright_green()
             );
@@ -62,7 +62,7 @@ pub async fn handle_command(
             match alpm.is_package_installed(&package) {
                 Ok(true) => {
                     println!(
-                        "\n{} {} {}\n",
+                        "{} {} {}",
                         "Package".bold(),
                         package.bright_green(),
                         "is already installed"
@@ -71,7 +71,7 @@ pub async fn handle_command(
                 }
                 Ok(false) => {
                     println!(
-                        "\n{} {} {}",
+                        "{} {} {}",
                         "Package".bold(),
                         package.bright_green(),
                         "is not installed, proceeding with installation".bold()
@@ -84,43 +84,23 @@ pub async fn handle_command(
 
             let cache_dir = config.cache_path()?;
 
-            let package_path_to_install = if let Some(cached_pkg) = PackageBuilder::find_cached_package(&cache_dir, &package) {
+            let package_paths_to_install = if let Some(cached_pkg) = PackageBuilder::find_cached_package(&cache_dir, &package) {
                 println!(
                     "{} {} {}",
                     "Using cached package:".bold(),
                     package.bright_green(),
                     format!("({:?})", cached_pkg).bright_cyan()
                 );
-                // If package is cached, check and install its dependencies first
-                println!(
-                    "{} {}.{}",
-                    "Checking dependencies for cached package:".bold(),
-                    package.bright_green(),
-                    "\n".bold()
-                );
-                match PackageBuilder::read_dependency_list(&package, &cache_dir) {
-                    Ok(dependencies) => {
-                        if !dependencies.is_empty() {
-                            println!("{}", "Installing missing dependencies for cached package...".bold());
-                            match PackageBuilder::install_dependencies(&dependencies, alpm, config) {
-                                Ok(_) => {
-                                    println!("{}", "✓ Dependencies for cached package installed successfully.".green().bold());
-                                },
-                                Err(e) => {
-                                    return Err(anyhow::anyhow!(e).context(format!("Failed to install dependencies for cached package {}", package)));
-                                }
-                            }
-                        } else {
-                            println!("{}", "No tracked dependencies found for cached package.".bright_yellow());
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("{} {}", "Warning: Failed to read dependency list for cached package:".yellow().bold(), e);
-                        println!("{}", "Proceeding with main package installation, but dependencies might be missing.".yellow());
-                        // Continue even if reading dependency list fails, log a warning
+                // If package is cached, collect all cached packages (main + deps)
+                let mut pkgs = vec![];
+                let deps = PackageBuilder::read_dependency_list(&package, &cache_dir).unwrap_or_default();
+                for dep in deps {
+                    if let Some(dep_pkg) = PackageBuilder::find_cached_package(&cache_dir, &dep) {
+                        pkgs.push(dep_pkg);
                     }
                 }
-                cached_pkg // Return the path to the cached package for main installation
+                pkgs.push(cached_pkg);
+                pkgs
             } else {
                 println!(
                     "{} {}",
@@ -136,14 +116,17 @@ pub async fn handle_command(
                 PackageBuilder::build_package_with_deps(
                     &package,
                     &build_dir,
+                    aur,
                     &config,
                 ).await
                 .context(format!("Failed to build package {} with dependencies", package))?
             };
 
-            // Install the specified package after build, either using cache or building from AUR
-            alpm.install_package(&package_path_to_install)
-                .context(format!("\nFailed to install package {}", package))?;
+            // Install only the main package (last in the list)
+            if let Some(main_pkg) = package_paths_to_install.last() {
+                alpm.install_packages(&[main_pkg.clone()])
+                    .context(format!("\nFailed to install main package for {}", package))?;
+            }
         }
         Commands::Info { package, deps } => {
             let pkg_info = aur.get_package_info(&package).await
@@ -208,7 +191,7 @@ pub async fn handle_command(
             match alpm.is_package_installed(&package) {
                 Ok(true) => {
                     println!(
-                        "\n{} {} {}",
+                        "{} {} {}",
                         "Package".bold(),
                         package.bright_green(),
                         "is installed, proceeding with removal".bold()
@@ -222,7 +205,7 @@ pub async fn handle_command(
                     packages_to_remove.extend(aur_deps_to_remove.clone());
 
                     alpm.remove_package(&packages_to_remove)
-                        .context(format!("Failed to remove packages {:?}\n", packages_to_remove))?;
+                        .context(format!("Failed to remove packages {:?}", packages_to_remove))?;
 
                     for dep in &aur_deps_to_remove {
                         PackageBuilder::delete_cached_package(&cache_dir, dep)?;
@@ -232,7 +215,7 @@ pub async fn handle_command(
                         .context("Failed to delete cached package")?;
                 }
                 Err(AlpmError::NotFound(_)) => {
-                    eprintln!("{} {}\n", "✗ Package not found in system:".red().bold(), package.bright_red());
+                    eprintln!("{} {}", "✗ Package not found in system:".red().bold(), package.bright_red());
                 }
                 Err(e) => {
                     return Err(anyhow::anyhow!(e as AlpmError).context("Failed to check if package is installed"));
@@ -378,9 +361,10 @@ pub async fn handle_command(
                 PackageBuilder::clone_repo(&package, &build_dir)
                     .context("Failed to clone repository for update")?;
 
-                let package_path = PackageBuilder::build_package_with_deps(
+                let package_paths = PackageBuilder::build_package_with_deps(
                     &package,
                     &build_dir,
+                    aur,
                     &config,
                 ).await
                 .context("Failed to rebuild package")?;
@@ -388,8 +372,8 @@ pub async fn handle_command(
                 alpm.remove_package(&[package])
                     .context("Failed to remove old package")?;
 
-                alpm.install_package(&package_path)
-                    .context("Failed to install updated package")?;
+                alpm.install_packages(&package_paths)
+                    .context("Failed to install updated package(s)")?;
 
                 println!("\n{}", "✓ Update completed successfully!".green().bold());
             } else {

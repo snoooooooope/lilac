@@ -6,9 +6,6 @@ use std::{str, fs};
 use colored::Colorize;
 use crate::config::AppConfig;
 use crate::alpm::AlpmWrapper;
-use tempfile::tempdir;
-use std::io::{BufReader, Read};
-use std::thread;
 use crate::AlpmError;
 
 pub struct PackageBuilder;
@@ -38,62 +35,32 @@ impl PackageBuilder {
         build_dir: &Path,
     ) -> Result<(), BuildError> {
         println!(
-            "{} {} {} {}\n",
+            "{} {} {} {}",
             "Running makepkg for".bold(),
             package_name.bright_green(),
             "in:".bold(),
             format!("{:?}", build_dir).bright_cyan()
         );
 
-        let mut child = Command::new("makepkg")
+        let status = Command::new("makepkg")
             .current_dir(build_dir)
             .args(["--syncdeps", "--cleanbuild"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
             .map_err(|e| build_makepkg_error(
                 format!("Failed to spawn makepkg: {}", e),
                 "build"
             ))?;
 
-        let stdout = child.stdout.take()
-            .ok_or_else(|| build_makepkg_error("Failed to capture makepkg stdout", "build"))?;
-        let stderr = child.stderr.take()
-            .ok_or_else(|| build_makepkg_error("Failed to capture makepkg stderr", "build"))?;
-
-        let stdout_handle = thread::spawn(move || {
-            let mut reader = BufReader::new(stdout);
-            let mut buffer = String::new();
-            let _ = reader.read_to_string(&mut buffer);
-            buffer
-        });
-
-        let stderr_handle = thread::spawn(move || {
-            let mut reader = BufReader::new(stderr);
-            let mut buffer = String::new();
-            let _ = reader.read_to_string(&mut buffer);
-            buffer
-        });
-
-        let status_code = child.wait()
-            .map_err(|e| build_makepkg_error(
-                format!("Error waiting for makepkg process to exit: {}", e),
-                "build"
-            ))?;
-
-        let makepkg_output = stdout_handle.join().unwrap_or_default();
-        let makepkg_stderr = stderr_handle.join().unwrap_or_default();
-
-        println!("makepkg output:\n{}", makepkg_output);
-        println!("makepkg stderr:\n{}", makepkg_stderr);
-
-        if !status_code.success() {
+        if !status.success() {
             return Err(build_makepkg_error(
-                format!("Exit code: {}", status_code),
+                format!("makepkg failed with exit code: {}", status),
                 "build"
             ));
         }
 
+        println!("\n{}\n", "✓ makepkg build succeeded.".green().bold());
         Ok(())
     }
 
@@ -145,11 +112,147 @@ impl PackageBuilder {
         Ok(dependencies)
     }
 
+    pub async fn install_dependencies(
+        dependencies: &[String],
+        alpm: &AlpmWrapper,
+        aur: &crate::aur::AurClient,
+        config: &AppConfig,
+    ) -> Result<(Vec<String>, Vec<std::path::PathBuf>), BuildError> {
+        let cache_dir = config.cache_path()?;
+        let mut official_repo_deps: Vec<String> = Vec::new();
+        let mut aur_deps_to_build: Vec<String> = Vec::new();
+        let mut cached_deps_to_install: Vec<String> = Vec::new();
+        let mut cached_pkg_paths: Vec<std::path::PathBuf> = Vec::new();
+
+        println!("{}", "Categorizing dependencies...".bold());
+
+        for dep in dependencies.iter() {
+            match alpm.is_package_installed(dep) {
+                Ok(true) => {
+                    continue;
+                }
+                Err(AlpmError::NotFound(_)) | Ok(false) => {
+                }
+                Err(e) => {
+                    return Err(build_makepkg_error(
+                        format!("Failed to check if dependency {} is installed: {}", dep, e),
+                        "dependency check",
+                    ));
+                }
+            }
+
+            // Check if the dependency is in the official repositories
+            match alpm.is_package_available(dep) {
+                 Ok(true) => {
+                    official_repo_deps.push(dep.clone());
+                 }
+                 Ok(false) => {
+                    if let Some(cached_pkg_path) = Self::find_cached_package(&cache_dir, dep) {
+                        cached_deps_to_install.push(dep.clone());
+                        cached_pkg_paths.push(cached_pkg_path);
+                    } else {
+                         match aur.get_package_info(dep).await {
+                             Ok(_) => {
+                                 aur_deps_to_build.push(dep.clone());
+                             },
+                             Err(crate::error::AurError::NotFound(_)) => {
+                                 return Err(build_makepkg_error(
+                                     format!("Dependency {} not found in official repos, cache, or AUR", dep),
+                                     "dependency resolution",
+                                 ));
+                             },
+                             Err(e) => {
+                                 return Err(build_makepkg_error(
+                                     format!("Failed to check AUR for dependency {}: {}", dep, e),
+                                     "dependency resolution",
+                                 ));
+                             }
+                         }
+                    }
+                 }
+                 Err(e) => {
+                     return Err(build_makepkg_error(
+                         format!("Failed to check if dependency {} is in official repos: {}", dep, e),
+                         "dependency check",
+                     ));
+                 }
+            }
+        }
+
+        // Build and cache AUR dependencies
+        if !aur_deps_to_build.is_empty() {
+            for dep in &aur_deps_to_build {
+                let current_alpm = AlpmWrapper::new()?;
+                match current_alpm.is_package_installed(&dep) {
+                    Ok(true) => {
+                        continue;
+                    },
+                    Err(AlpmError::NotFound(_)) | Ok(false) => {},
+                    Err(e) => {
+                        return Err(build_makepkg_error(
+                            format!("Failed to re-check if dependency {} is installed: {}", dep, e),
+                            "dependency check",
+                        ));
+                    }
+                }
+
+                // Build from AUR
+                let temp_dir = tempfile::tempdir().map_err(|e| build_makepkg_error(
+                    format!("Failed to create temp dir for {}: {}", dep, e),
+                    "dependency resolution"
+                ))?;
+
+                let dep_build_dir = temp_dir.path().join(&dep);
+                Self::clone_repo(&dep, &dep_build_dir)?;
+
+                let output = std::process::Command::new("makepkg")
+                    .current_dir(&dep_build_dir)
+                    .args(["--syncdeps"])
+                    .output()
+                    .map_err(|e| build_makepkg_error(
+                        format!("makepkg failed for dependency {}: {}", dep, e),
+                        "dependency build"
+                    ))?;
+
+                if !output.status.success() {
+                    return Err(build_makepkg_error(
+                        format!("Failed to build dependency {}: {}", dep,
+                            std::str::from_utf8(&output.stderr).unwrap_or("<invalid UTF-8>")),
+                        "dependency build"
+                    ));
+                }
+
+                let pkg_path_in_temp = Self::find_built_package(&dep_build_dir, &dep)?;
+                Self::cache_package(&pkg_path_in_temp, &cache_dir, &dep)?;
+                let cached_path = cache_dir.join(pkg_path_in_temp.file_name().unwrap());
+                if cached_path.exists() {
+                    cached_pkg_paths.push(cached_path);
+                } else {
+                    return Err(build_makepkg_error(
+                        format!("Failed to find cached package {} in cache after building and caching", dep),
+                        "caching",
+                    ));
+                }
+            }
+        }
+
+        // Add any cached dependencies
+        for cached_pkg_path in &cached_pkg_paths {
+            if !official_repo_deps.contains(&cached_pkg_path.to_string_lossy().to_string()) {
+                // Only add unique paths, I dont like this
+                // TODO: fix my own stupidity
+            }
+        }
+
+        Ok((official_repo_deps, cached_pkg_paths))
+    }
+
     pub async fn build_package_with_deps(
         package_name: &str,
         build_dir: &Path,
+        aur: &crate::aur::AurClient,
         config: &AppConfig,
-    ) -> Result<PathBuf, BuildError> {
+    ) -> Result<Vec<PathBuf>, BuildError> {
         let cache_dir = config.cache_path().map_err(|e| build_makepkg_error(
             format!("Failed to access cache directory: {}", e),
             "caching",
@@ -162,7 +265,15 @@ impl PackageBuilder {
                 package_name.bright_green(),
                 format!("({:?})", cached_pkg).bright_cyan()
             );
-            return Ok(cached_pkg);
+            let mut pkgs = vec![];
+            let deps = Self::read_dependency_list(package_name, &cache_dir).unwrap_or_default();
+            for dep in deps {
+                if let Some(dep_pkg) = Self::find_cached_package(&cache_dir, &dep) {
+                    pkgs.push(dep_pkg);
+                }
+            }
+            pkgs.push(cached_pkg);
+            return Ok(pkgs);
         }
 
         println!(
@@ -173,7 +284,7 @@ impl PackageBuilder {
             format!("{:?}", build_dir).bright_cyan()
         );
 
-        if !build_dir.exists() || !build_dir.is_dir() || fs::read_dir(build_dir).map_err(|e| build_makepkg_error(
+        if !build_dir.exists() || !build_dir.is_dir() || std::fs::read_dir(build_dir).map_err(|e| build_makepkg_error(
             format!("Failed to read directory {:?}: {}", build_dir, e),
             "dependency check"
         ))?.count() == 0 {
@@ -185,23 +296,81 @@ impl PackageBuilder {
         let dependencies = Self::get_dependencies_from_srcinfo(build_dir)?;
         
         let alpm = AlpmWrapper::new()?;
-        let newly_installed_deps = Self::install_dependencies(&dependencies, &alpm, config)?;
+        let (official_repo_deps, aur_pkg_paths) = Self::install_dependencies(&dependencies, &alpm, aur, config).await?;
+
+        // Install official repo dependencies with pacman -S --needed
+        if !official_repo_deps.is_empty() {
+            println!("\n{}\n", "✓ Official repository dependencies found.".green().bold());
+            let status = std::process::Command::new("sudo")
+                .arg("pacman")
+                .arg("-S")
+                .arg("--needed")
+                .args(&official_repo_deps)
+                .status();
+            match status {
+                Ok(exit_status) => {
+                    if !exit_status.success() {
+                        return Err(build_makepkg_error(
+                            format!("pacman -S failed with exit code: {}", exit_status),
+                            "dependency pre-install",
+                        ));
+                    }
+                }
+                Err(e) => {
+                    return Err(build_makepkg_error(
+                        format!("Failed to execute pacman -S for dependencies: {}", e),
+                        "dependency pre-install",
+                    ));
+                }
+            }
+        }
+
+        // Install AUR dependencies with pacman -U
+        if !aur_pkg_paths.is_empty() {
+            println!("\n{}\n", "✓ AUR dependencies found.".green().bold());
+            let status = std::process::Command::new("sudo")
+                .arg("pacman")
+                .arg("-U")
+                .args(&aur_pkg_paths)
+                .status();
+            match status {
+                Ok(exit_status) => {
+                    if !exit_status.success() {
+                        return Err(build_makepkg_error(
+                            format!("pacman -U failed with exit code: {}", exit_status),
+                            "dependency pre-install",
+                        ));
+                    }
+                }
+                Err(e) => {
+                    return Err(build_makepkg_error(
+                        format!("Failed to execute pacman -U for AUR dependencies: {}", e),
+                        "dependency pre-install",
+                    ));
+                }
+            }
+        }
 
         Self::execute_makepkg(package_name, build_dir)?;
 
-        println!("{} {} built successfully.", "Main package:".bold(), package_name.bright_green());
+        println!("{} {} {}.", "Main package:".bold(), package_name.bright_green(), "built successfully".bold());
 
         let pkg_path_in_temp = Self::find_built_package(build_dir, package_name)?;
-
         Self::cache_package(&pkg_path_in_temp, &cache_dir, package_name)?;
+        Self::save_dependency_list(package_name, &cache_dir, &dependencies)?;
 
-        Self::save_dependency_list(package_name, &cache_dir, &newly_installed_deps)?;
-
-        Self::find_cached_package(&cache_dir, package_name)
-             .ok_or_else(|| build_makepkg_error(
-                 format!("Failed to find cached package {} after building", package_name),
-                 "caching"
-             ))
+        // Collect all dependency package paths from install_dependencies, then add main package last
+        let mut all_pkgs = aur_pkg_paths;
+        if let Some(main_pkg) = Self::find_cached_package(&cache_dir, package_name) {
+            all_pkgs.push(main_pkg);
+        }
+        if all_pkgs.is_empty() {
+            return Err(build_makepkg_error(
+                format!("Failed to find any packages to install for {}", package_name),
+                "caching"
+            ));
+        }
+        Ok(all_pkgs)
     }
 
     pub fn find_cached_package(cache_dir: &Path, package_name: &str) -> Option<PathBuf> {
@@ -262,7 +431,7 @@ impl PackageBuilder {
                         "cache cleanup",
                     ))?;
                     println!(
-                        "\n{} {} {}\n",
+                        "{} {} {}",
                         "Deleted cached package:".bold(),
                         package_name.bright_green(),
                         format!("({:?})", path).bright_cyan()
@@ -274,9 +443,6 @@ impl PackageBuilder {
 
         packages_info.sort();
 
-        if packages_info.is_empty() {
-            println!("\n{}", "No packages installed via lilac found in cache.".bold());
-        }
         Ok(())
     }
 
@@ -327,215 +493,6 @@ impl PackageBuilder {
         );
 
         Ok(dependencies)
-    }
-
-    pub fn install_dependencies(
-        dependencies: &[String],
-        alpm: &AlpmWrapper,
-        config: &AppConfig,
-    ) -> Result<Vec<String>, BuildError> {
-        let cache_dir = config.cache_path()?;
-        let mut newly_installed_deps = Vec::new();
-        let mut official_repo_deps: Vec<String> = Vec::new();
-        let mut aur_deps_to_build: Vec<String> = Vec::new();
-        let mut cached_deps_to_install: Vec<String> = Vec::new();
-        let mut cached_pkg_paths: Vec<PathBuf> = Vec::new();
-
-        println!("{}", "Categorizing dependencies...".bold());
-
-        for dep in dependencies.iter() {
-            print!("  - {}: ", dep.bright_green());
-
-            // 1. Check if dependency is already installed globally by pacman
-            match alpm.is_package_installed(dep) {
-                Ok(true) => {
-                    println!("{}", "Already installed".bright_yellow());
-                    newly_installed_deps.push(dep.clone());
-                    continue;
-                }
-                Err(AlpmError::NotFound(_)) | Ok(false) => {
-                    print!("{}", "Not installed, ".bright_yellow());
-                }
-                Err(e) => {
-                    return Err(build_makepkg_error(
-                        format!("Failed to check if dependency {} is installed: {}", dep, e),
-                        "dependency check",
-                    ));
-                }
-            }
-
-            // 2. Check if the dependency is in the official repositories
-            match alpm.is_package_available(dep) {
-                 Ok(true) => {
-                    println!("{}", "Found in official repos".bright_blue());
-                    official_repo_deps.push(dep.clone());
-                 }
-                 Ok(false) => {
-                    print!("{}", "Not in official repos, ".bright_blue());
-
-                    // 3. If not in official repos, check if it's in the lilac cache
-                    if let Some(cached_pkg_path) = Self::find_cached_package(&cache_dir, dep) {
-                        println!("{}", "Found in cache".bright_cyan());
-                        cached_deps_to_install.push(dep.clone());
-                        cached_pkg_paths.push(cached_pkg_path);
-                    } else {
-                         print!("{}", "Not in cache, ".bright_cyan());
-                         println!("{}", "Likely AUR (needs building)".bright_yellow());
-                         aur_deps_to_build.push(dep.clone()); // Add to a separate list for AUR processing (needs building)
-                    }
-                 }
-                 Err(e) => {
-                     return Err(build_makepkg_error(
-                         format!("Failed to check if dependency {} is in official repos: {}", dep, e),
-                         "dependency check",
-                     ));
-                 }
-            }
-        }
-
-        if !official_repo_deps.is_empty() {
-            println!("{}", "Installing official repository dependencies...".bold());
-            let status = Command::new("sudo")
-                .arg("pacman")
-                .arg("-S")
-                .arg("--needed")
-                .args(&official_repo_deps)
-                .status();
-
-            match status {
-                Ok(exit_status) => {
-                    if !exit_status.success() {
-                        return Err(build_makepkg_error(
-                            format!("pacman -S failed with exit code: {}", exit_status),
-                            "dependency installation",
-                        ));
-                    }
-                     println!("{}", "✓ Official repository dependencies installed successfully.".green().bold());
-                      for dep in official_repo_deps {
-                          match alpm.is_package_installed(&dep) {
-                              Ok(true) => { newly_installed_deps.push(dep); },
-                              Err(_) | Ok(false) => { /* Should not happen if pacman -S succeeded with --needed */ }
-                          }
-                      }
-                }
-                 Err(e) => {
-                     return Err(build_makepkg_error(
-                        format!("Failed to execute pacman for official repository dependencies: {}", e),
-                        "dependency installation",
-                    ));
-                 }
-            }
-            // Re-initialize ALPM wrapper to refresh database view after batch install
-            let _alpm = AlpmWrapper::new()?;
-        }
-        let mut newly_built_pkg_paths: Vec<PathBuf> = Vec::new(); // Paths for newly built packages
-
-        if !aur_deps_to_build.is_empty() {
-             println!("{}", "Processing AUR dependencies (building)...".bold());
-             for dep in &aur_deps_to_build {
-                  println!("  - {}: ", dep.bright_green());
-                  let current_alpm = AlpmWrapper::new()?;
-                  match current_alpm.is_package_installed(&dep) {
-                        Ok(true) => { 
-                            println!("{}", "Already installed".bright_yellow());
-                            // Add to newly_installed_deps if it wasn't already there
-                            if !newly_installed_deps.contains(dep) { newly_installed_deps.push(dep.clone()); }
-                            continue; // Skip building if already installed
-                        },
-                        Err(AlpmError::NotFound(_)) | Ok(false) => {},
-                        Err(e) => {
-                            return Err(build_makepkg_error(
-                                format!("Failed to re-check if dependency {} is installed: {}", dep, e),
-                                "dependency check",
-                            ));
-                        }
-                   }
-
-                   // Build from AUR
-                   println!("{}", "Building from AUR".bright_yellow());
-
-                   let temp_dir = tempdir().map_err(|e| build_makepkg_error(
-                       format!("Failed to create temp dir for {}: {}", dep, e),
-                       "dependency resolution"
-                   ))?;
-
-                   let dep_build_dir = temp_dir.path().join(&dep);
-                   Self::clone_repo(&dep, &dep_build_dir)?; // Clone the repo
-
-                   let output = Command::new("makepkg")
-                       .current_dir(&dep_build_dir)
-                       .args(["--syncdeps"])
-                       .output()
-                       .map_err(|e| build_makepkg_error(
-                           format!("makepkg failed for dependency {}: {}", dep, e),
-                           "dependency build"
-                       ))?;
-
-                   if !output.status.success() {
-                       return Err(build_makepkg_error(
-                           format!("Failed to build dependency {}: {}", dep,
-                               str::from_utf8(&output.stderr).unwrap_or("<invalid UTF-8>")),
-                           "dependency build"
-                       ));
-                   }
-
-                   let pkg_path_in_temp = Self::find_built_package(&dep_build_dir, &dep)?; // Find the built package file in temp
-                   Self::cache_package(&pkg_path_in_temp, &cache_dir, &dep)?; // Cache the built package
-                   // Add the path to the *cached* package for batch installation
-                   let cached_path = cache_dir.join(pkg_path_in_temp.file_name().unwrap());
-                   if cached_path.exists() {
-                       newly_built_pkg_paths.push(cached_path);
-                   } else {
-                       // This case should ideally not happen if cache_package was successful
-                       return Err(build_makepkg_error(
-                           format!("Failed to find cached package {} in cache after building and caching", dep),
-                           "caching",
-                       ));
-                   }
-               }
-           }
-
-           // 3. Install AUR dependencies (both cached and newly built) in a batch
-           let all_aur_pkg_paths_to_install = cached_pkg_paths.into_iter()
-                                                   .chain(newly_built_pkg_paths.into_iter())
-                                                   .collect::<Vec<PathBuf>>();
-
-           if !all_aur_pkg_paths_to_install.is_empty() {
-               println!("{}", "Installing AUR dependencies (from cache and newly built)...".bold());
-               let status = Command::new("sudo")
-                   .arg("pacman")
-                   .arg("-U")
-                   .args(&all_aur_pkg_paths_to_install)
-                   .status();
-
-               match status {
-                   Ok(exit_status) => {
-                       if !exit_status.success() {
-                           return Err(build_makepkg_error(
-                               format!("pacman -U failed with exit code: {}", exit_status),
-                               "dependency installation",
-                           ));
-                       }
-                       println!("{}", "✓ AUR dependencies installed successfully.".green().bold());
-                       // Add the names of dependencies that were installed via the batch command
-                       for dep_name in aur_deps_to_build.into_iter().chain(cached_deps_to_install.into_iter()) {
-                           if !newly_installed_deps.contains(&dep_name) {
-                               newly_installed_deps.push(dep_name);
-                           }
-                       }
-                   }
-                    Err(e) => {
-                        return Err(build_makepkg_error(
-                           format!("Failed to execute pacman for AUR dependencies: {}", e),
-                           "dependency installation",
-                       ));
-                    }
-               }
-               // Re-initialize ALPM wrapper to refresh database view after batch install
-               let _alpm = AlpmWrapper::new()?;
-           }
-
-           Ok(newly_installed_deps) // Return the list of newly installed dependencies
     }
 
     fn find_built_package(build_dir: &Path, package_name: &str) -> Result<PathBuf, BuildError> {
