@@ -37,26 +37,27 @@ lilac info stuxnet --deps
 - Report issues: [Cyno Issues](https://git.cyno.space/issues) | [GitHub Issues](https://github.com/snoooooooope/lilac/issues)
 ## Contributing
 Contributions are welcome from everyone. Here's how you can help:
+   ## Requirements
+   - Git
+   - Jujutsu
+   - Rust   
 ### Git
 1. **Clone the repository**:
    ```bash
-   git clone https://git.cyno.space/ryan/lilac.git
+   jj git clone https://git.cyno.space/ryan/lilac.git
    ```
-2. **Create a feature branch**:
+2. **Create a feature**:
    ```bash
-   git checkout -b feature/your-feature
+   jj new feature
    ```
 3. **Commit your changes**:
    ```bash
-   git commit -am 'Add some feature'
+   jj desc -m 'broke everything'
    ```
-4. **Push to the branch**:
+4. **Push your bookmark**:
    ```bash
-   git push origin feature/your-feature
+   jj bookmark move feature --to @-
+   jj git push
    ```
-5. **Open a pull request**:
-   - Navigate to the repository on Cyno / GitHub.
-   - Click "Compare & pull request" for your pushed branch.
-   - Include a clear title and description of your changes.
 ## License
 Lilac is MIT licensed.
