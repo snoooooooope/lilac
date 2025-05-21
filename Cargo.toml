@@ -1,0 +1,31 @@
+[package]
+name = "lilac"
+version = "1.0.0"
+description = "a KISS AUR helper designed to smell good, and get out of the way."
+edition = "2024"
+repository = "https://github.com/snoooooooope/lilac"
+license-file = "LICENSE"
+readme = "README.md"
+categories = ["command-line-utilities", "development-tools::build-utils"]
+keywords = ["aur", "arch", "build", "archlinux", "cli"]
+
+[dependencies]
+alpm = "4.0.3"
+anyhow = "1.0.98"
+clap = { version = "4.5.38", features = ["derive"] }
+config = "0.15.11"
+env_logger = "0.11.8"
+git2 = "0.20.2"
+glob = "0.3.1"
+log = "0.4.27"
+reqwest = { version = "0.12.15", features = ["json"] }
+serde = "1.0.219"
+serde_json = "1.0.140"
+tempfile = "3.20.0"
+tokio = { version = "1.45.0", features = ["rt-multi-thread", "macros"] }
+chrono = "0.4"
+dirs = "5.0.0"
+colored = "2.0"
+futures = "0.3.31"
+versions = "7.0.0"
+wait-timeout = "0.2.1"
