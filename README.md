@@ -41,7 +41,7 @@ Contributions are welcome from everyone. Here's how you can help:
    - Git
    - Jujutsu
    - Rust   
-### Git
+### JJ
 1. **Clone the repository**:
    ```bash
    jj git clone https://git.cyno.space/ryan/lilac.git
@@ -56,8 +56,7 @@ Contributions are welcome from everyone. Here's how you can help:
    ```
 4. **Push your bookmark**:
    ```bash
-   jj bookmark move feature --to @-
-   jj git push
+   jj git push --change @-
    ```
 ## License
 Lilac is MIT licensed.
