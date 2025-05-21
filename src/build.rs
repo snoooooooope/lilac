@@ -38,7 +38,7 @@ impl PackageBuilder {
         build_dir: &Path,
     ) -> Result<(), BuildError> {
         println!(
-            "{} {} {} {}",
+            "{} {} {} {}\n",
             "Running makepkg for".bold(),
             package_name.bright_green(),
             "in:".bold(),
@@ -262,8 +262,8 @@ impl PackageBuilder {
                         "cache cleanup",
                     ))?;
                     println!(
-                        "{} {} {}",
-                        "Deleted cached package:\n".bold(),
+                        "\n{} {} {}\n",
+                        "Deleted cached package:".bold(),
                         package_name.bright_green(),
                         format!("({:?})", path).bright_cyan()
                     );
@@ -276,13 +276,7 @@ impl PackageBuilder {
 
         if packages_info.is_empty() {
             println!("\n{}", "No packages installed via lilac found in cache.".bold());
-        } else {
-            println!("\n{}", "Packages in cache:".bold());
-            for pkg in packages_info {
-                println!("  - {}", pkg.bright_green());
-            }
         }
-
         Ok(())
     }
 

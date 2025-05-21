@@ -1,9 +1,9 @@
 [package]
 name = "lilac"
-version = "1.0.0"
+version = "1.0.1"
 description = "a KISS AUR helper designed to smell good, and get out of the way."
 edition = "2024"
-repository = "https://github.com/snoooooooope/lilac"
+repository = "https://git.cyno.space/ryan/lilac"
 license-file = "LICENSE"
 readme = "README.md"
 categories = ["command-line-utilities", "development-tools::build-utils"]
@@ -24,8 +24,8 @@ serde_json = "1.0.140"
 tempfile = "3.20.0"
 tokio = { version = "1.45.0", features = ["rt-multi-thread", "macros"] }
 chrono = "0.4"
-dirs = "5.0.0"
-colored = "2.0"
+dirs = "6.0.0"
+colored = "3.0.0"
 futures = "0.3.31"
 versions = "7.0.0"
 wait-timeout = "0.2.1"

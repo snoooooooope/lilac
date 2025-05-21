@@ -294,9 +294,9 @@ pub async fn handle_command(
             packages_info.sort();
 
             if packages_info.is_empty() {
-                println!("\n{}", "No packages installed via lilac found in cache.".bold());
+                println!("\n{}\n", "No packages installed via lilac found in cache.".bold());
             } else {
-                println!("\n{}", "Packages installed via lilac:".bold());
+                println!("\n{}\n", "Packages installed via lilac:".bold());
                 for pkg_info in packages_info {
                     println!("  - {}\n", pkg_info.bright_green());
                 }

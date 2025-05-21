@@ -89,7 +89,7 @@ impl AlpmWrapper {
                 status
             )))
         } else {
-            println!("{}", "✓ Successfully removed!".green().bold());
+            println!("\n{}\n", "✓ Successfully removed!".green().bold());
             Ok(())
         }
     }
