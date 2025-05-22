@@ -93,8 +93,8 @@ This project uses [**Jujutsu**](https://github.com/jj-vcs/jj) for version contro
 
 ### Submitting for Review (Pull Requests)
 
-2.  **Push to Your Fork:**
-    * Push your bookmark to your GitHub fork. Jujutsu will force-push, which is normal:
+2.  **Push to Github**
+    * Push your bookmark to GitHub. Jujutsu will force-push, which is normal:
         ```bash
         jj git push --change @-
         ```
