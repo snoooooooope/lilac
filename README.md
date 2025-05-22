@@ -63,7 +63,7 @@ This project uses [**Jujutsu**](https://github.com/jj-vcs/jj) for version contro
 2.  **Start New Work:**
     * Create a new commit to start your changes. This commit becomes your editable working copy:
         ```bash
-        jj new @ main
+        jj new main
         ```
     * *Tip:* If you're fixing an existing commit, you can use `jj edit <commit_id>`. Jujutsu will automatically rebase descendants.
 3.  **Make Your Changes:**
@@ -71,7 +71,7 @@ This project uses [**Jujutsu**](https://github.com/jj-vcs/jj) for version contro
 4.  **Describe Your Commit:**
     * Once your changes form a single, logical unit, add a clear commit message:
         ```bash
-        jj describe -m "Your commit message"
+        jj desc -m "changes"
         ```
     * **Commit Message Format:** Start with a topic (e.g., `cli: add new --foo option` or `docs: update quickstart guide`). Be concise and descriptive.
 5.  **Create Atomic Commits:**
