@@ -10,6 +10,10 @@ readme = "README.md"
 categories = ["command-line-utilities", "development-tools::build-utils"]
 keywords = ["aur", "arch", "build", "archlinux", "cli"]
 
+[[bin]]
+name = "lilac"
+path = "src/main.rs"
+
 [dependencies]
 alpm = "4.0.3"
 anyhow = "1.0.98"
