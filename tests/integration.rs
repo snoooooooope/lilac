@@ -107,11 +107,11 @@ mod tests {
 
     #[test]
     fn test_help_command() {
-        Command::cargo_bin("lilac_aur")
+        Command::cargo_bin("lilac")
             .unwrap()
             .arg("--help")
             .assert()
             .success()
-            .stdout(predicate::str::contains("Usage: lilac_aur"));
+            .stdout(predicate::str::contains("Usage: lilac"));
     }
 } 
