@@ -5,14 +5,7 @@
 Lilac is a **KISS** AUR helper designed to search, download, and build packages from the Arch User Repository. It's fast, lightweight, and doesn't try to reinvent the wheel.
 
 ## Installation
-1. Clone the repository:
-   ```bash
-   git clone https://git.cyno.space/ryan/lilac.git
-
-   cd lilac
-   ```
-
-2. Install:
+1. Install:
    ```bash
    cargo install lilac_aur
    ```
