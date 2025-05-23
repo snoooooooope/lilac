@@ -73,7 +73,7 @@ mod tests {
 
     #[test]
     fn test_packagebuilder_find_cached_package_none() {
-        use lilac::build::PackageBuilder;
+        use lilac_aur::build::PackageBuilder;
         let temp = tempfile::tempdir().unwrap();
         let found = PackageBuilder::find_cached_package(temp.path(), "notapkg");
         assert!(found.is_none());
@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn test_packagebuilder_read_dependency_list_empty() {
-        use lilac::build::PackageBuilder;
+        use lilac_aur::build::PackageBuilder;
         let temp = tempfile::tempdir().unwrap();
         let deps = PackageBuilder::read_dependency_list("notapkg", temp.path()).unwrap();
         assert!(deps.is_empty());
@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn test_aurpackage_struct() {
-        use lilac::aur::AurPackage;
+        use lilac_aur::aur::AurPackage;
         let pkg = AurPackage {
             name: "foo".into(),
             version: "1.0".into(),
