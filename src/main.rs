@@ -1,4 +1,4 @@
-use lilac::{
+use lilac_aur::{
     AlpmWrapper,
     AurClient,
     AppConfig,

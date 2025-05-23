@@ -14,7 +14,7 @@ Lilac is a **KISS** AUR helper designed to search, download, and build packages 
 
 2. Install:
    ```bash
-   cargo install --path .
+   cargo install lilac_aur
    ```
 
 ## Usage

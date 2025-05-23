@@ -2,8 +2,8 @@
 
 #[cfg(test)]
 mod tests {
-    use lilac::error::*;
-    use lilac::config::AppConfig;
+    use lilac_aur::error::*;
+    use lilac_aur::config::AppConfig;
     use tempfile;
     use assert_cmd::Command;
     use predicates::prelude::*;
