@@ -1,6 +1,6 @@
 [package]
 name = "lilac_aur"
-version = "1.1.1"
+version = "1.1.2"
 description = "a KISS AUR helper designed to smell good, and get out of the way."
 edition = "2024"
 repository = "https://github.com/snoooooooope/lilac"
